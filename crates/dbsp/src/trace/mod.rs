@@ -85,7 +85,7 @@ pub trait DBData:
 {
 }
 
-/// Automatically implement DBData for everything that satisfied the bounds.
+/// Automatically implement DBData for everything that satisfies the bounds.
 impl<T> DBData for T where
     T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {

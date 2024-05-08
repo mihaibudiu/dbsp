@@ -45,6 +45,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         options.languageOptions.optimizationLevel = optimize ? 2 : 0;
         options.languageOptions.generateInputForEveryTable = true;
         options.languageOptions.incrementalize = false;
+        options.ioOptions.dynamic = true;
         return options;
     }
 

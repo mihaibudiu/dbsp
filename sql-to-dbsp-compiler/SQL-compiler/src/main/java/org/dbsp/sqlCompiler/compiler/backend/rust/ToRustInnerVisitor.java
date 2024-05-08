@@ -122,14 +122,10 @@ import org.dbsp.util.Utilities;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * This visitor generate a Rust implementation of the program.
- */
+/** This visitor generate a Rust implementation of the program. */
 public class ToRustInnerVisitor extends InnerVisitor {
     protected final IndentStream builder;
-    /**
-     * If set use a more compact display, which is not necessarily compilable.
-     */
+    /** If set use a more compact display, which is not necessarily compilable. */
     protected final boolean compact;
     protected final CompilerOptions options;
 
@@ -1291,7 +1287,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                                       CompilerOptions options, boolean compact) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream, options, compact);
+        ToRustInnerVisitor visitor;
+        if (options.ioOptions.dynamic)
+            visitor = new ToRustInnerDynamicVisitor(reporter, stream, options, compact);
+        else
+            visitor = new ToRustInnerVisitor(reporter, stream, options, compact);
         node.accept(visitor);
         return builder.toString();
     }

@@ -101,7 +101,7 @@ public class ToRustVisitor extends CircuitVisitor {
     protected final IndentStream builder;
     // Assemble here the list of streams that is output by the circuit
     protected final IndentStream streams;
-    final InnerVisitor innerVisitor;
+    final ToRustInnerVisitor innerVisitor;
     final boolean useHandles;
     final CompilerOptions options;
     final ProgramMetadata metadata;
@@ -125,12 +125,16 @@ public class ToRustVisitor extends CircuitVisitor {
         super(reporter);
         this.options = options;
         this.builder = builder;
-        this.innerVisitor = new ToRustInnerVisitor(reporter, builder, options, false);
         this.useHandles = this.options.ioOptions.emitHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
         this.metadata = metadata;
         this.structsGenerated = new HashSet<>();
+        this.innerVisitor = this.createInnerVisitor(builder);
+    }
+
+    ToRustInnerVisitor createInnerVisitor(IndentStream builder) {
+        return new ToRustInnerVisitor(this.errorReporter, builder, options, false);
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
@@ -367,9 +371,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         StringBuilder b = new StringBuilder();
         IndentStream signature = new IndentStream(b);
-        ToRustInnerVisitor inner = new ToRustInnerVisitor(
-                this.errorReporter, signature, this.options, false);
-
+        InnerVisitor inner = this.createInnerVisitor(signature);
         if (!this.useHandles) {
             signature.append("Catalog");
         } else {
@@ -465,6 +467,9 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void generateStructHelpers(DBSPTypeStruct type, @Nullable InputTableMetadata metadata) {
+        if (this.options.ioOptions.emitHandles)
+            return;
+
         List<DBSPTypeStruct> nested = new ArrayList<>();
         findNestedStructs(type, nested);
         for (DBSPTypeStruct s: nested) {
@@ -1080,7 +1085,12 @@ public class ToRustVisitor extends CircuitVisitor {
     public static String toRustString(IErrorReporter reporter, DBSPCircuit node, CompilerOptions options) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, options, node.getMetadata());
+        ToRustVisitor visitor;
+        if (options.ioOptions.dynamic) {
+            visitor = new ToRustDynamicVisitor(reporter, stream, options, node.getMetadata());
+        } else {
+            visitor = new ToRustVisitor(reporter, stream, options, node.getMetadata());
+        }
         visitor.apply(node);
         return builder.toString();
     }

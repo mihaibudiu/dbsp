@@ -179,7 +179,7 @@ public class BaseSQLTests {
         PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
         // Use the compiler from the first test case.
         DBSPCompiler firstCompiler = testsToRun.get(0).ccs.compiler;
-        RustFileWriter writer = new RustFileWriter(outputStream);
+        RustFileWriter writer = new RustFileWriter(outputStream, firstCompiler.options.ioOptions.dynamic);
         int testNumber = 0;
         String[] extraArgs = new String[0];
         for (TestCase test: testsToRun) {
@@ -233,6 +233,7 @@ public class BaseSQLTests {
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
+        options.ioOptions.dynamic = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
         options.languageOptions.incrementalize = incremental;

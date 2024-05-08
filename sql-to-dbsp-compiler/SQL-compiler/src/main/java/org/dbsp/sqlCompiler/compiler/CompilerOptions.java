@@ -157,6 +157,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public String outputFile = "";
         @Parameter(names = "--udf", description = "Specify a Rust file containing implementations of user-defined functions")
         public String udfs = "";
+        @Parameter(names = "--dynamic", description = "If set generate code using dynamic types in Rust")
+        public boolean dynamic = false;
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
         @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")
@@ -182,7 +184,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {
-            return this.emitHandles == other.emitHandles;
+            return this.emitHandles == other.emitHandles
+                    && this.dynamic == other.dynamic;
         }
 
         @Override
@@ -191,6 +194,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                     "outputFile=" + Utilities.singleQuote(this.outputFile) +
                     ", metadataSource=" + this.metadataSource +
                     ", emitJpeg=" + this.emitJpeg +
+                    ", dynamic=" + this.dynamic +
                     ", emitHandles=" + this.emitHandles +
                     ", emitPng=" + this.emitPng +
                     ", emitJsonErrors=" + this.emitJsonErrors +
@@ -208,6 +212,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
             return "IO{" +
                     (this.emitHandles != other.emitHandles ? ".emitHandles=" +
                             this.emitHandles + "!=" + other.emitHandles: "") +
+                    (this.dynamic != other.dynamic ? ".dynamic=" +
+                            this.dynamic + "!=" + other.dynamic: "") +
                     "}";
         }
     }

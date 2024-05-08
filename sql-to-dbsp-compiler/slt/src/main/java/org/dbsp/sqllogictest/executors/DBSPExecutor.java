@@ -567,7 +567,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         String genFileName = Main.testFileName + ".rs";
         String testFilePath = Main.rustDirectory + "/" + genFileName;
         PrintStream stream = new PrintStream(testFilePath, StandardCharsets.UTF_8);
-        RustFileWriter rust = new RustFileWriter(stream);
+        RustFileWriter rust = new RustFileWriter(stream, compiler.options.ioOptions.dynamic);
 
         for (DBSPFunction function : inputFunctions)
             rust.add(function);
@@ -591,6 +591,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
                 compilerOptions.languageOptions.lenient = true;
                 compilerOptions.languageOptions.generateInputForEveryTable = true;
+                compilerOptions.ioOptions.dynamic = true;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
                 result.skip(skip.get());
                 Set<String> bugs = options.readBugsFile();

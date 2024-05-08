@@ -24,15 +24,16 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 
-/**
- * This class helps generate Rust code.
- * It is given a set of circuit and functions and generates a compilable Rust file.
- */
+/** This class helps generate Rust code.
+ * It is given a set of circuit and functions and generates a compilable Rust file. */
 public class RustFileWriter {
     final List<IDBSPNode> toWrite;
     final PrintStream outputStream;
+    /** If true use dynamically-typed code generation */
+    final boolean dynamic;
 
     /**
      * Various visitors gather here information about the program prior to generating code.
@@ -94,89 +95,92 @@ public class RustFileWriter {
             use hashing::*;
             """;  // comparison functions
 
-    /**
-     * Preamble used when generating Rust code.
-     */
-    @SuppressWarnings("SpellCheckingInspection")
-    static final String rustPreamble = """
-                    use paste::paste;
-                    use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
-                    use dbsp::{
-                        algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
-                             UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
-                             AddAssignByRef,
-                        },
-                        circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
-                        operator::{
-                            Generator,
-                            FilterMap,
-                            Fold,
-                            time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
-                            MaxSemigroup,
-                            MinSemigroup,
-                            CmpFunc,
-                        },
-                        OrdIndexedZSet, OrdZSet,
-                        TypedBox,
-                        utils::*,
-                        zset,
-                        indexed_zset,
-                        DBWeight,
-                        DBData,
-                        DBSPHandle,
-                        Error,
-                        Runtime,
-                        NumEntries,
-                        MapHandle, ZSetHandle, OutputHandle,
-                        dynamic::DynData,
-                    };
-                    use dbsp_adapters::Catalog;
-                    use pipeline_types::{deserialize_table_record, serialize_table_record};
-                    use size_of::*;
-                    use ::serde::{Deserialize,Serialize};
-                    use compare::{Compare, Extract};
-                    use std::{
-                        convert::identity,
-                        ops::{Add, Neg, AddAssign},
-                        fmt::{Debug, Formatter, Result as FmtResult},
-                        cell::RefCell,
-                        path::Path,
-                        rc::Rc,
-                        marker::PhantomData,
-                        str::FromStr,
-                    };
-                    use core::cmp::Ordering;
-                    use rust_decimal::Decimal;
+    /** Preamble used when generating Rust code. */
+    String rustPreamble() {
+        String result = """
+                // use paste::paste;
+                // use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
+                use dbsp::{
+                    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
+                         UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
+                         AddAssignByRef,
+                    },
+                    circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
+                    operator::{
+                        Generator,
+                        FilterMap,
+                        Fold,
+                        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
+                        MaxSemigroup,
+                        MinSemigroup,
+                        CmpFunc,
+                    },
+                    OrdIndexedZSet, OrdZSet,
+                    TypedBox,
+                    utils::*,
+                    zset,
+                    indexed_zset,
+                    DBWeight,
+                    DBData,
+                    DBSPHandle,
+                    Error,
+                    Runtime,
+                    NumEntries,
+                    MapHandle, ZSetHandle, OutputHandle,
+                    dynamic::DynData,
+                };
+                use dbsp_adapters::Catalog;
+                use pipeline_types::{deserialize_table_record, serialize_table_record};
+                use size_of::*;
+                use ::serde::{Deserialize,Serialize};
+                use compare::{Compare, Extract};
+                use std::{
+                    convert::identity,
+                    ops::{Add, Neg, AddAssign},
+                    fmt::{Debug, Formatter, Result as FmtResult},
+                    path::Path,
+                    marker::PhantomData,
+                };
+                use core::cmp::Ordering;
+                use rust_decimal::Decimal;
+                use json::*;
+                use sqllib::{
+                    *,
+                    array::*,
+                    casts::*,
+                    binary::*,
+                    geopoint::*,
+                    timestamp::*,
+                    interval::*,
+                    string::*,
+                    operators::*,
+                    aggregates::*,
+                    sqlvalue::*,
+                };
+                #[cfg(test)]
+                use sltsqlvalue::*;
+                #[cfg(test)]
+                use readers::*;
+                #[cfg(test)]
+                use sqlx::{AnyConnection, any::AnyRow, Row};
+                """;
+        if (!this.dynamic)
+            result += """
                     use dbsp::declare_tuples;
-                    use json::*;
-                    use sqllib::{
-                        *,
-                        array::*,
-                        casts::*,
-                        binary::*,
-                        geopoint::*,
-                        timestamp::*,
-                        interval::*,
-                        string::*,
-                        operators::*,
-                        aggregates::*,
-                    };
-                    use sqlvalue::*;
-                    #[cfg(test)]
-                    use readers::*;
-                    #[cfg(test)]
-                    use sqlx::{AnyConnection, any::AnyRow, Row};
                     """;
-
-
-    public RustFileWriter(PrintStream outputStream) {
-        this.toWrite = new ArrayList<>();
-        this.outputStream = outputStream;
+        return result;
     }
 
-    public RustFileWriter(String outputFile)
+
+    public RustFileWriter(PrintStream outputStream, boolean dynamic) {
+        this.toWrite = new ArrayList<>();
+        this.outputStream = outputStream;
+        this.dynamic = dynamic;
+    }
+
+    public RustFileWriter(String outputFile, boolean dynamic)
             throws IOException {
-        this(new PrintStream(outputFile, StandardCharsets.UTF_8));
+        this(new PrintStream(outputFile, StandardCharsets.UTF_8), dynamic);
     }
 
     /** Generate TupN[T0, T1, ...] */
@@ -222,56 +226,95 @@ public class RustFileWriter {
             stream.append("#[derive(Clone)]").newline()
                     .append("pub struct Semigroup")
                     .append(i)
-                    .append("<")
-                    .intercalate(", ", ts)
-                    .join(", ", tts)
-                    .append(">(PhantomData<(")
-                    .intercalate(", ", ts)
-                    .join(", ", tts)
+                    .append("<");
+            if (!this.dynamic) {
+                stream.intercalate(", ", ts);
+            }
+            stream.join(", ", tts)
+                    .append(">(PhantomData<(");
+            if (!this.dynamic) {
+                stream.intercalate(", ", ts);
+            }
+            stream.join(", ", tts)
                     .append(")>);")
                     .newline()
                     .newline();
 
-            stream.append("impl<")
-                    .intercalate(", ", ts)
-                    .join(", ", tts)
+            stream.append("impl<");
+            if (!this.dynamic) {
+                stream.intercalate(", ", ts);
+            }
+            stream.join(", ", tts)
                     .append("> Semigroup")
-                    .append("<")
-                    .append(DBSPTypeCode.TUPLE.rustName)
+                    .append("<");
+            if (this.dynamic) {
+                stream.append("SqlTuple");
+            } else {
+                stream.append(DBSPTypeCode.TUPLE.rustName)
+                        .append(i);
+                stream.append("<")
+                        .intercalate(", ", indexes, ix -> "T" + ix)
+                        .append(">");
+            }
+            stream.append("> for Semigroup")
                     .append(i)
-                    .append("<")
-                    .intercalate(", ", indexes, ix -> "T" + ix)
-                    .append(">> for Semigroup")
-                    .append(i)
-                    .append("<")
-                    .intercalate(", ", ts)
-                    .join(", ", tts)
+                    .append("<");
+            if (!this.dynamic) {
+                stream.intercalate(", ", ts);
+            }
+            stream.join(", ", tts)
                     .append(">")
                     .newline()
                     .append("where").increase()
-                    .join(",\n", indexes, ix -> "TS" + ix + ": Semigroup<T" + ix + ">")
+                    .join(",\n", indexes, ix -> "TS" + ix + ": Semigroup<" +
+                            (this.dynamic ? "SqlValue" : "T" + ix) + ">")
                     .newline().decrease()
                     .append("{").increase()
-                    .append("fn combine(left: &")
-                    .append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i)
-                    .append("<")
-                    .intercalate(", ", ts)
-                    .append(">, right:&")
-                    .append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i)
-                    .append("<")
-                    .intercalate(", ", ts)
-                    .append(">) -> ")
-                    .append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i)
-                    .append("<")
-                    .intercalate(", ", ts)
-                    .append("> {").increase()
-                    .append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i)
-                    .append("::new(").increase()
-                    .join("\n", indexes, ix -> "TS" + ix + "::combine(&left." + ix + ", &right." + ix + "),")
+                    .append("fn combine(left: &");
+            if (this.dynamic) {
+                stream.append("SqlTuple");
+            } else {
+                stream.append(DBSPTypeCode.TUPLE.rustName)
+                        .append(i)
+                        .append("<")
+                        .intercalate(", ", ts)
+                        .append(">");
+            }
+            stream.append(", right:&");
+            if (this.dynamic) {
+                stream.append("SqlTuple");
+            } else {
+                stream.append(DBSPTypeCode.TUPLE.rustName)
+                        .append(i)
+                        .append("<")
+                        .intercalate(", ", ts)
+                        .append(">");
+            }
+            stream.append(") -> ");
+            if (this.dynamic) {
+                stream.append("SqlTuple");
+            } else {
+                stream.append(DBSPTypeCode.TUPLE.rustName)
+                        .append(i)
+                        .append("<")
+                        .intercalate(", ", ts)
+                        .append(">");
+            }
+            stream.append(" {").increase();
+            if (this.dynamic) {
+                stream.append("SqlTuple::from")
+                        .append(i);
+            } else {
+                stream.append(DBSPTypeCode.TUPLE.rustName)
+                        .append(i)
+                        .append("::new");
+            }
+            Function<Integer, String> genIndex =
+                    index -> this.dynamic ? "[" + index + "]" : ("." + index);
+            stream.append("(").increase()
+                    .join("\n", indexes, ix -> "TS" + ix + "::combine(&left" +
+                            genIndex.apply(ix) + ", &right" +
+                            genIndex.apply(ix) + "),")
                     .newline().decrease()
                     .append(")").newline()
                     .decrease()
@@ -279,6 +322,9 @@ public class RustFileWriter {
                     .decrease()
                     .append("}").newline();
         }
+
+        if (this.dynamic)
+            return;
 
         stream.append("declare_tuples! {").increase();
         for (int i: used.tupleSizesUsed) {
@@ -306,7 +352,7 @@ public class RustFileWriter {
         }
         stream.append("\n");
 
-        stream.append("sqlvalue::to_sql_row_impl! {").increase();
+        stream.append("sltsqlvalue::to_sql_row_impl! {").increase();
         for (int i: used.tupleSizesUsed) {
             if (i <= 10)
                 // These are already pre-declared
@@ -320,7 +366,7 @@ public class RustFileWriter {
     String generatePreamble(DBSPCompiler compiler, StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
-        stream.append(rustPreamble)
+        stream.append(rustPreamble())
                 .newline();
         this.generateStructures(used, stream);
 

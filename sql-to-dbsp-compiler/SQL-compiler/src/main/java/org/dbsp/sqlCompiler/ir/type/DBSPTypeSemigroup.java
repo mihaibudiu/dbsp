@@ -29,10 +29,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.Linq;
 
-/**
- * Represents a Semigroup trait implementation.
- * TODO: this probably should not exist, but it matches the DBSP APIs.
- */
+/** Represents a Semigroup trait implementation.
+ * TODO: this probably should not exist, but it matches the DBSP APIs. */
 public class DBSPTypeSemigroup extends DBSPTypeUser {
     public DBSPTypeSemigroup(DBSPType[] elementTypes, DBSPType[] semigroupTypes) {
         super(CalciteObject.EMPTY, DBSPTypeCode.SEMIGROUP, "Semigroup" + elementTypes.length, false,
