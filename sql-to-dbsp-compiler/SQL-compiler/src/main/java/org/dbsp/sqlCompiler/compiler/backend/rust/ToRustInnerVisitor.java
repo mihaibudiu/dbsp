@@ -63,6 +63,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -86,6 +88,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
@@ -197,6 +200,40 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPSomeExpression expression) {
         this.builder.append("Some(");
         expression.expression.accept(this);
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnsignedWrapExpression expression) {
+        this.builder.append("UnsignedWrapper")
+                .append("::")
+                .append(expression.getMethod())
+                .append("::<");
+        expression.getSourceType().accept(this);
+        this.builder.append(", ");
+        expression.getIntermediateType().accept(this);
+        this.builder.append(", ");
+        expression.getType().accept(this);
+        this.builder.append(">(");
+        expression.source.accept(this);
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnsignedUnwrapExpression expression) {
+        this.builder.append("UnsignedWrapper")
+                .append("::")
+                .append(expression.getMethod())
+                .append("::<");
+        expression.getSourceType().accept(this);
+        this.builder.append(", ");
+        expression.getIntermediateType().accept(this);
+        this.builder.append(", ");
+        expression.getType().accept(this);
+        this.builder.append(">(");
+        expression.source.accept(this);
         this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -492,7 +529,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPU32Literal literal) {
-        String val = Integer.toString(Objects.requireNonNull(literal.value));
+        String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return VisitDecision.STOP;
     }
@@ -508,7 +545,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPU64Literal literal) {
-        String val = Long.toString(Objects.requireNonNull(literal.value));
+        String val = Objects.requireNonNull(literal.value).toString();
+        this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPU128Literal literal) {
+        String val = Objects.requireNonNull(literal.value).toString();
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
         return VisitDecision.STOP;
     }

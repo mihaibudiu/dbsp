@@ -135,6 +135,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -1474,7 +1475,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
             IsNumericType numType = boundType.as(IsNumericType.class);
             if (numType == null) {
-                throw new UnimplementedException("Currently windows must use integer values ",
+                throw new UnimplementedException("Currently windows must use integer values, so "
+                        + boundType + " is not legal",
                         CalciteObject.create(this.window));
             }
             DBSPExpression numericBound;
@@ -1504,9 +1506,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             if (orderKeys.size() > 1)
                 throw new UnimplementedException("ORDER BY not yet supported with multiple columns", node);
+            if (orderKeys.isEmpty())
+                throw new UnimplementedException("ORDER BY is required", node);
             RelFieldCollation collation = orderKeys.get(0);
             int orderColumnIndex = collation.getFieldIndex();
-            DBSPExpression orderField = inputRowRefVar.deref().field(orderColumnIndex);
+            DBSPExpression originalOrderField = inputRowRefVar.deref().field(orderColumnIndex);
+            DBSPType sortType = originalOrderField.getType();
+            if (!sortType.is(DBSPTypeInteger.class) &&
+                    !sortType.is(DBSPTypeTimestamp.class) &&
+                    !sortType.is(DBSPTypeDate.class))
+                throw new UnimplementedException("OVER currently requires an integer type for ordering "
+                        + "and cannot handle " + sortType, node);
+
+            // This only works correctly if the order field is unsigned.
+            DBSPExpression orderField = new DBSPUnsignedWrapExpression(node, originalOrderField);
+            DBSPType unsignedSortType = orderField.getType();
 
             // Map each row to an expression of the form: |t| (partition, (order, (*t).clone()))
             DBSPExpression orderAndRow = new DBSPTupleExpression(
@@ -1524,21 +1538,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             if (collation.getDirection() != RelFieldCollation.Direction.ASCENDING)
                 throw new UnimplementedException("OVER only supports ascending sorting", node);
-            DBSPType sortType = inputRowType.tupFields[orderColumnIndex];
-            if (!sortType.is(DBSPTypeInteger.class) &&
-                    !sortType.is(DBSPTypeTimestamp.class) &&
-                    !sortType.is(DBSPTypeDate.class))
-                throw new UnimplementedException("OVER currently requires an integer type for ordering "
-                        + "and cannot handle " + sortType, node);
-            if (sortType.mayBeNull) {
-                RelDataTypeField relDataTypeField = window.getInput().getRowType().getFieldList().get(orderColumnIndex);
-                throw new UnimplementedException("OVER currently does not support sorting on nullable column " +
-                        Utilities.singleQuote(relDataTypeField.getName()) + ":", node);
-            }
 
             // Create window description
-            DBSPExpression lb = this.compileWindowBound(group.lowerBound, sortType, eComp);
-            DBSPExpression ub = this.compileWindowBound(group.upperBound, sortType, eComp);
+            DBSPExpression lb = this.compileWindowBound(group.lowerBound, unsignedSortType, eComp);
+            DBSPExpression ub = this.compileWindowBound(group.upperBound, unsignedSortType, eComp);
             DBSPExpression windowExpr = new DBSPConstructorExpression(
                     new DBSPPath("RelRange", "new").toExpression(),
                     DBSPTypeAny.getDefault(), lb, ub);
@@ -1567,7 +1570,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath previousRowRefVar = currentTupleType.ref().var("t");
             DBSPExpression partAndOrder = new DBSPTupleExpression(
                     partition.applyCloneIfNeeded(),
-                    orderField.applyCloneIfNeeded());
+                    originalOrderField.applyCloneIfNeeded());
             DBSPExpression indexedInput = new DBSPRawTupleExpression(
                     partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
             DBSPClosureExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());

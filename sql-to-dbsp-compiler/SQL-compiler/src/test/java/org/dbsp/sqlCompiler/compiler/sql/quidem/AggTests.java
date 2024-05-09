@@ -16,7 +16,7 @@ public class AggTests extends PostBaseTests {
                 | 8 |
                 +---+
                 (1 row)
-                                    
+                
                 -- COUNT excludes fully or partially null rows
                 select count(city, gender) as c from emps;
                 +---+
@@ -25,7 +25,7 @@ public class AggTests extends PostBaseTests {
                 | 3 |
                 +---+
                 (1 row)
-                                
+                
                 -- COUNT-DISTINCT excludes fully or partially null rows
                 select count(distinct city, gender) as c from emps;
                 +---+
@@ -34,7 +34,7 @@ public class AggTests extends PostBaseTests {
                 | 3 |
                 +---+
                 (1 row)
-                                
+                
                 select distinct mod(deptno, 20) as m, gender as c from emps;
                 +----+---+
                 | M  | C |
@@ -44,7 +44,7 @@ public class AggTests extends PostBaseTests {
                 |  0 | M|
                 +----+---+
                 (3 rows)
-                                
+                
                 -- Partially null row (10, NULL) is excluded from count.
                 select count(distinct mod(deptno, 20), gender) as c from emps;
                 +---+
@@ -53,7 +53,7 @@ public class AggTests extends PostBaseTests {
                 | 2 |
                 +---+
                 (1 row)
-                                
+                
                 select count(mod(deptno, 20), gender) as c from emps;
                 +---+
                 | C |

@@ -38,6 +38,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -59,6 +61,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
@@ -537,6 +540,16 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPU128Literal expression) {
+        this.push(expression);
+        DBSPType type = this.transform(expression.getType());
+        this.pop(expression);
+        DBSPExpression result = new DBSPU128Literal(expression.getNode(), type, expression.value);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPUSizeLiteral expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
@@ -789,6 +802,27 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPExpression result = source.field(expression.fieldNo);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnsignedWrapExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        this.pop(expression);
+        DBSPExpression result = new DBSPUnsignedWrapExpression(expression.getNode(), source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnsignedUnwrapExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        this.pop(expression);
+        DBSPExpression result = new DBSPUnsignedUnwrapExpression(
+                expression.getNode(), source, expression.type.mayBeNull);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

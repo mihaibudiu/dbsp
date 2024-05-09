@@ -842,12 +842,12 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void emptyAggregate() {
-        String query = "SELECT COUNT(*), COUNT(DISTINCT COL1) FROM T WHERE false";
+        // Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
+        String query = "SELECT COUNT(*), COUNT(DISTINCT COL1) FROM T WHERE COL1 > 10000";
         this.testConstantOutput(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPI64Literal(0), new DBSPI64Literal(0))));
     }
-
 
     @Test
     public void constAggregateExpression() {

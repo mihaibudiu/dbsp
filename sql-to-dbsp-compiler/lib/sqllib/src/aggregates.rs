@@ -10,6 +10,101 @@ use rust_decimal::Decimal;
 use std::cmp::Ord;
 use std::marker::Copy;
 
+trait Min {
+    fn min_value() -> Self;
+}
+
+trait Max {
+    fn max_value() -> Self;
+}
+
+pub trait IsUnsigned : PrimInt {}
+impl IsUnsigned for u16 {}
+impl IsUnsigned for u32 {}
+impl IsUnsigned for u64 {}
+impl IsUnsigned for u128 {}
+
+pub trait IsSigned : PrimInt {} // + Min + Max {}
+
+macro_rules! make_signed {
+    ($type: ty) => {
+        impl Min for $type {
+            fn min_value() -> Self {
+                <$type>::MIN
+            }
+        }
+
+        impl Max for $type {
+            fn max_value() -> Self {
+                <$type>::MAX
+            }
+        }
+
+        impl IsSigned for $type {}
+    }
+}
+
+make_signed!(i8);
+make_signed!(i16);
+make_signed!(i32);
+make_signed!(i64);
+
+pub struct UnsignedWrapper
+{}
+
+impl UnsignedWrapper
+{
+    pub fn from_signed<S, I, U>(value: S) -> U
+    where
+        S: IsSigned,
+        I: IsSigned + From<S>,
+        U: IsUnsigned + TryFrom<I>,
+        <U as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        <U as TryFrom<I>>::try_from(<I as From<S>>::from(value) + <I as From<S>>::from(S::max_value())).unwrap()
+    }
+
+    pub fn from_option<S, I, U>(value: Option<S>) -> U
+    where
+        S: IsSigned,
+        I: IsSigned + From<S>,
+        U: IsUnsigned + TryFrom<I>,
+        <U as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        match value {
+            // TODO: This representation makes NULL the smallest value
+            None => <U as TryFrom<I>>::try_from(<I as From<S>>::from(S::min_value())).unwrap(),
+            Some(value) => <U as TryFrom<I>>::try_from(<I as From<S>>::from(value) + <I as From<S>>::from(S::max_value())).unwrap(),
+        }
+    }
+
+    pub fn to_signed<U, I, S>(value: U) -> S
+    where
+        S: IsSigned + TryFrom<I>,
+        I: IsSigned + From<S> + TryFrom<U>,
+        U: IsUnsigned + TryFrom<I>,
+        <I as TryFrom<U>>::Error: std::fmt::Debug,
+        <S as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        <S as TryFrom<I>>::try_from(<I as TryFrom<U>>::try_from(value).unwrap() - <I as From<S>>::from(S::max_value())).unwrap()
+    }
+
+    pub fn to_signed_option<U, I, S>(value: U) -> Option<S>
+    where
+        S: IsSigned + TryFrom<U> + From<I>,
+        I: IsSigned + From<S> + TryFrom<U>,
+        U: IsUnsigned + From<I>,
+        <I as TryFrom<U>>::Error: std::fmt::Debug,
+        <S as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        if <I as TryFrom<U>>::try_from(value).unwrap() <= <I as From<S>>::from(S::min_value()) {
+            None
+        } else {
+            Some(UnsignedWrapper::to_signed::<U, I, S>(value))
+        }
+    }
+}
+
 // Macro to create variants of an aggregation function
 // There must exist a function g(left: T, right: T) -> T ($base_name = g)
 // This creates 4 more functions ($func_name = f)
@@ -266,3 +361,4 @@ where
         (Some(left), Some(right)) => left >= right,
     }
 }
+

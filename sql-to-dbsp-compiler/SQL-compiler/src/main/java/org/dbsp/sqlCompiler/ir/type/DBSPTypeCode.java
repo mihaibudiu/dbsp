@@ -27,9 +27,11 @@ public enum DBSPTypeCode {
     UINT16("u16", "u16"),
     UINT32("u32", "u32"),
     UINT64("u64", "u64"),
+    UINT128("u128", "u128"),
     USIZE("u", "usize"),
     VOID("void", ""),
     WEIGHT("Weight", "Weight"),
+    UNSIGNED_WRAPPER("UnsignedWrapper", "UnsignedWrapper"),
     // Derived types
     FUNCTION("", ""),
     INDEXED_ZSET("", ""),

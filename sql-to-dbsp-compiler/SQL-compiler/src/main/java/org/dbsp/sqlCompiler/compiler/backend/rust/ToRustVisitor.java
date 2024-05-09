@@ -988,7 +988,7 @@ public class ToRustVisitor extends CircuitVisitor {
         builder.append(" = " )
                 .append(tmp)
                 .append(".map_index(|(key, ts_agg)| { ")
-                .append("( Tup2::new(key.clone(), ts_agg.0), ts_agg.1.unwrap_or_default() )")
+                .append("( Tup2::new(key.clone(), UnsignedWrapper::to_signed::<u64, i64, i32>(ts_agg.0)), ts_agg.1.unwrap_or_default() )")
                 .append("});");
         return VisitDecision.STOP;
     }

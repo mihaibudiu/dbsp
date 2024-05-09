@@ -35,11 +35,33 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
-    public final Long value;
+    public final BigInteger value;
+
+    public DBSPU64Literal(CalciteObject node, DBSPType type, @Nullable BigInteger value) {
+        super(node, type, value == null);
+        if (value != null && value.compareTo(BigInteger.ZERO) < 0)
+            throw new CompilationError("Negative value for u64 literal " + value);
+        this.value = value;
+    }
+
+    public DBSPU64Literal(BigInteger value) {
+        this(value, false);
+    }
+
+    public DBSPU64Literal(CalciteObject node, @Nullable BigInteger value, boolean nullable) {
+        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, 64, false, nullable), value);
+        if (value == null && !nullable)
+            throw new InternalCompilerError("Null value with non-nullable type", this);
+    }
+
+    public DBSPU64Literal(@Nullable BigInteger value, boolean nullable) {
+        this(CalciteObject.EMPTY, value, nullable);
+    }
 
     @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
@@ -49,31 +71,10 @@ public class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLiteral {
         return Objects.equals(value, that.value);
     }
 
-    public DBSPU64Literal(CalciteObject node, DBSPType type, @Nullable Long value) {
-        super(node, type, value == null);
-        if (value != null && value < 0)
-            throw new CompilationError("Negative value for u64 literal " + value);
-        this.value = value;
-    }
-
-    public DBSPU64Literal(long value) {
-        this(value, false);
-    }
-
     @Override
     public boolean gt0() {
         assert this.value != null;
-        return this.value > 0;
-    }
-
-    public DBSPU64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {
-        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, 64, false, nullable), value);
-        if (value == null && !nullable)
-            throw new InternalCompilerError("Null value with non-nullable type", this);
-    }
-
-    public DBSPU64Literal(@Nullable Long value, boolean nullable) {
-        this(CalciteObject.EMPTY, value, nullable);
+        return this.value.compareTo(BigInteger.ZERO) > 0;
     }
 
     @Override
