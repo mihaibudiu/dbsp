@@ -12,6 +12,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -183,15 +185,35 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPIntegrateTraceRetainKeysOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
                     aggregator.getNode(), source, projection2, limiter2);
             this.addOperator(before);
-            // output of 'before' is never used
+            // output of 'before' is not used in the graph, but the DBSP Rust layer will use it
 
             DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
                     aggregator.getNode(), filteredAggregator, projection2, limiter2);
             this.addOperator(after);
-            // output of 'after'' is never used
+            // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
 
             this.map(aggregator, filteredAggregator, false);
         }
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        MonotoneExpression expression = this.expansionMonotoneValues.get(operator);
+        if (expression == null) {
+            super.postorder(operator);
+            return;
+        }
+        DBSPOperator source = operator.input();
+        DBSPOperator bound = this.addBounds(operator, 0);
+        if (bound == null) {
+            super.postorder(operator);
+            return;
+        }
+        DBSPPartitionedRollingAggregateWithWaterlineOperator replacement =
+                new DBSPPartitionedRollingAggregateWithWaterlineOperator(operator.getNode(),
+                        operator.partitioningFunction, operator.function, operator.aggregate,
+                        operator.window, operator.getOutputIndexedZSetType(), bound, this.mapped(source));
+        this.map(operator, replacement);
     }
 
     @Override

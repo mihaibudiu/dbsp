@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -320,8 +321,7 @@ public class Monotonicity extends CircuitVisitor {
         this.identity(node);
     }
 
-    @Override
-    public void postorder(DBSPPrimitiveAggregateOperator node) {
+    public void aggregate(DBSPOperator node) {
         // Input type is IndexedZSet<key, tuple>
         // Output type is IndexedZSet(key, aggregateType)
         MonotoneExpression inputValue = this.getMonotoneExpression(node.inputs.get(0));
@@ -349,5 +349,15 @@ public class Monotonicity extends CircuitVisitor {
                 this.errorReporter, node, projection, true);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, Objects.requireNonNull(result));
+    }
+
+    @Override
+    public void postorder(DBSPPrimitiveAggregateOperator node) {
+        this.aggregate(node);
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator node) {
+        // this.aggregate(node);
     }
 }

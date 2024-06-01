@@ -49,7 +49,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPPartitionedRollingAggregate otherOperator = other.as(DBSPPartitionedRollingAggregate.class);
+        DBSPPartitionedRollingAggregateOperator otherOperator = other.as(DBSPPartitionedRollingAggregateOperator.class);
         if (otherOperator == null)
             return false;
         return this.isLinear == otherOperator.isLinear &&

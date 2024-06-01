@@ -91,7 +91,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregate;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -1568,7 +1568,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                     new DBSPTypeOption(aggResultType)));
 
             // Compute aggregates for the window
-            DBSPOperator windowAgg = new DBSPPartitionedRollingAggregate(
+            DBSPOperator windowAgg = new DBSPPartitionedRollingAggregateOperator(
                     node, partitioningFunction, null, fd,
                     windowExpr,
                     windowOutputType,

@@ -37,12 +37,12 @@ import java.util.List;
 
 /** This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
-public final class DBSPPartitionedRollingAggregate extends DBSPAggregateOperatorBase {
+public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPExpression partitioningFunction;
     public final DBSPExpression window;
 
     // TODO: support the linear version of this operator.
-    public DBSPPartitionedRollingAggregate(
+    public DBSPPartitionedRollingAggregateOperator(
             CalciteObject node,
             DBSPExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
@@ -62,7 +62,7 @@ public final class DBSPPartitionedRollingAggregate extends DBSPAggregateOperator
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPPartitionedRollingAggregate(
+        return new DBSPPartitionedRollingAggregateOperator(
                 this.getNode(), this.partitioningFunction,
                 expression, this.aggregate, this.window,
                 outputType.to(DBSPTypeIndexedZSet.class),
@@ -72,7 +72,7 @@ public final class DBSPPartitionedRollingAggregate extends DBSPAggregateOperator
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPPartitionedRollingAggregate(
+            return new DBSPPartitionedRollingAggregateOperator(
                     this.getNode(), this.partitioningFunction, this.function, this.aggregate, this.window,
                     this.getOutputIndexedZSetType(),
                     newInputs.get(0));
@@ -83,7 +83,7 @@ public final class DBSPPartitionedRollingAggregate extends DBSPAggregateOperator
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPPartitionedRollingAggregate otherOperator = other.as(DBSPPartitionedRollingAggregate.class);
+        DBSPPartitionedRollingAggregateOperator otherOperator = other.as(DBSPPartitionedRollingAggregateOperator.class);
         if (otherOperator == null)
             return false;
         return this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&

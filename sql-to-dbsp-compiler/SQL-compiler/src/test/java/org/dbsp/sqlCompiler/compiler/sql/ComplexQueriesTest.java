@@ -159,8 +159,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     cc_num BIGINT NOT NULL,
                     category STRING,
                     amt FLOAT64,
-                    unix_time BIGINT NOT NULL LATENESS 86400,
-                    is_fraud INTEGER,
+                    unix_time INTEGER NOT NULL LATENESS 86400,
                     first STRING
                 );
             
