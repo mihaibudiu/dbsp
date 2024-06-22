@@ -37,7 +37,7 @@ public final class DBSPPartitionedTreeAggregateOperator extends DBSPUnaryOperato
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedTreeAggregateOperator(this.getNode(), expression, this.aggregate,
-                outputType, this.inputs.get(0));
+                outputType, this.input());
     }
 
     @Override

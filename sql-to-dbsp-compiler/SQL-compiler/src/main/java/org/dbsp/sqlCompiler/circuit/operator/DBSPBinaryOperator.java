@@ -23,43 +23,29 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
-import java.util.List;
 
-public final class DBSPSubtractOperator extends DBSPBinaryOperator {
-    public DBSPSubtractOperator(CalciteObject node, DBSPOperator left, DBSPOperator right) {
-        super(node, "minus", null, left.outputType, false, left, right);
-        if (!left.outputType.sameType(right.outputType))
-            throw new InternalCompilerError("Inputs do not have the same type " + left.outputType +
-                    " and " + right.outputType, this);
+/** Base class for all DBSP query operators that have two inputs. */
+public abstract class DBSPBinaryOperator extends DBSPOperator {
+    protected DBSPBinaryOperator(CalciteObject node, String operation,
+                                 @Nullable DBSPExpression function, DBSPType outputType,
+                                 boolean isMultiset, DBSPOperator left, DBSPOperator right) {
+        super(node, operation, function, outputType, isMultiset);
+        this.addInput(left);
+        this.addInput(right);
     }
 
-    @Override
-    public void accept(CircuitVisitor visitor) {
-        visitor.push(this);
-        VisitDecision decision = visitor.preorder(this);
-        if (!decision.stop())
-            visitor.postorder(this);
-        visitor.pop(this);
+    /** The first input of this operator. */
+    public DBSPOperator left() {
+        return this.inputs.get(0);
     }
 
-    @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return this;
-    }
-
-    @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPSubtractOperator(
-                    this.getNode(), newInputs.get(0), newInputs.get(1));
-        return this;
+    /** The second input of this operator. */
+    public DBSPOperator right() {
+        return this.inputs.get(1);
     }
 }

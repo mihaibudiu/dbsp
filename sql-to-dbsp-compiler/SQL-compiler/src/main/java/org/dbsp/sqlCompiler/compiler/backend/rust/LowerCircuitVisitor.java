@@ -213,7 +213,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
         DBSPExpression function = impl.asFold();
         DBSPOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
-                node.partitioningFunction, function, null, node.window,
+                node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
         this.map(node, result);
     }
@@ -227,9 +227,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPAggregate.Implementation impl = node.aggregate.combine(this.errorReporter);
         DBSPExpression function = impl.asFold();
         DBSPOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
-                node.partitioningFunction, function, null, node.window,
+                node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),
-                this.mapped(node.inputs.get(0)), this.mapped(node.inputs.get(1)));
+                this.mapped(node.left()), this.mapped(node.right()));
         this.map(node, result);
     }
 }

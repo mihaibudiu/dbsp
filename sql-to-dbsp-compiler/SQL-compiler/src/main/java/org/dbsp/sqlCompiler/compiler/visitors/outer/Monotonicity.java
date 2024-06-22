@@ -8,16 +8,18 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
@@ -28,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTu
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -85,21 +88,24 @@ public class Monotonicity extends CircuitVisitor {
         DBSPType varType = projection.getType();
         DBSPExpression body;
         DBSPVariablePath var;
+        MonotoneTransferFunctions.ArgumentKind argumentType;
         if (pairOfReferences) {
             DBSPTypeRawTuple tpl = varType.to(DBSPTypeRawTuple.class);
             assert tpl.size() == 2: "Expected a pair, got " + varType;
             varType = new DBSPTypeRawTuple(tpl.tupFields[0].ref(), tpl.tupFields[1].ref());
             var = new DBSPVariablePath("t", varType);
             body = new DBSPRawTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
+            argumentType = MonotoneTransferFunctions.ArgumentKind.IndexedZSet;
         } else {
             varType = varType.ref();
             var = new DBSPVariablePath("t", varType);
             body = var.deref();
+            argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         }
         DBSPClosureExpression closure = body.closure(var.asParameter());
         // Invoke inner visitor.
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, operator, pairOfReferences, projection);
+                this.errorReporter, operator, argumentType, projection);
         return Objects.requireNonNull(analyzer.applyAnalysis(closure));
     }
 
@@ -125,7 +131,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression body = new DBSPTupleExpression(fields);
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, node, false, projection);
+                this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, result);
     }
@@ -271,9 +277,12 @@ public class Monotonicity extends CircuitVisitor {
         if (inputFunction == null)
             return;
 
+        IMaybeMonotoneType sourceType = getBodyType(inputFunction);
         DBSPExpression function = node.getFunction();
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(this
-                .errorReporter, node, false, getBodyType(inputFunction));
+                .errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType),
+                sourceType);
         MonotoneExpression result = mm.applyAnalysis(function);
         if (result == null)
             return;
@@ -282,11 +291,39 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPStreamJoinOperator node) {
-        MonotoneExpression left = this.getMonotoneExpression(node.inputs.get(0));
-        MonotoneExpression right = this.getMonotoneExpression(node.inputs.get(1));
+        MonotoneExpression left = this.getMonotoneExpression(node.left());
+        MonotoneExpression right = this.getMonotoneExpression(node.right());
         if (left == null && right == null)
             return;
-        // TODO
+        PartiallyMonotoneTuple leftType;
+        if (left != null) {
+            leftType = getBodyType(left).to(PartiallyMonotoneTuple.class);
+        } else {
+            DBSPType source = node.left().getOutputIndexedZSetType().getKVType();
+            leftType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
+        }
+        PartiallyMonotoneTuple rightType;
+        if (right != null) {
+            rightType = getBodyType(right).to(PartiallyMonotoneTuple.class);
+        } else {
+            DBSPType source = node.right().getOutputIndexedZSetType().getKVType();
+            rightType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
+        }
+
+        IMaybeMonotoneType leftKeyType = leftType.getField(0);
+        IMaybeMonotoneType rightKeyType = rightType.getField(0);
+        IMaybeMonotoneType leftValueType = leftType.getField(1);
+        IMaybeMonotoneType rightValueType = rightType.getField(1);
+
+        IMaybeMonotoneType keyType = leftKeyType.union(rightKeyType);
+        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
+                this.errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.Join,
+                keyType, leftValueType, rightValueType);
+        MonotoneExpression result = mm.applyAnalysis(node.getFunction());
+        if (result == null)
+            return;
+        this.set(node, result);
     }
 
     @Override
@@ -294,13 +331,29 @@ public class Monotonicity extends CircuitVisitor {
         MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
         if (inputFunction == null)
             return;
-        boolean pairOfReferences = node.input().getType().is(DBSPTypeIndexedZSet.class);
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node, pairOfReferences, getBodyType(inputFunction));
+                this.errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.fromType(node.input().getType()),
+                getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
         if (result == null)
             return;
         this.set(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPSumOperator node) {
+        List<MonotoneExpression> inputFunctions = Linq.map(node.inputs, this::getMonotoneExpression);
+        if (inputFunctions.contains(null))
+            // All the inputs must be monotone for the output to have a chance of being monotone
+            return;
+
+        List<IMaybeMonotoneType> types = Linq.map(inputFunctions, Monotonicity::getBodyType);
+        IMaybeMonotoneType result = IMaybeMonotoneType.intersection(types);
+        if (!result.mayBeMonotone())
+            return;
+        // TODO
+        // this.set(node, result);
     }
 
     @Override
@@ -313,7 +366,8 @@ public class Monotonicity extends CircuitVisitor {
         if (!value.mayBeMonotone())
             return;
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.errorReporter, node, true, getBodyType(inputFunction));
+                this.errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.IndexedZSet, getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
         if (result == null)
             return;
@@ -331,19 +385,13 @@ public class Monotonicity extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPUpsertFeedbackOperator node) {
-        // TODO
-        // this.identity(node);
-    }
-
-    @Override
     public void postorder(DBSPFilterOperator node) {
         this.identity(node);
     }
 
     public void aggregate(DBSPOperator node) {
         // Input type is IndexedZSet<key, tuple>
-        // Output type is IndexedZSet(key, aggregateType)
+        // Output type is IndexedZSet<key, aggregateType>
         MonotoneExpression inputValue = this.getMonotoneExpression(node.inputs.get(0));
         if (inputValue == null)
             return;
@@ -366,7 +414,7 @@ public class Monotonicity extends CircuitVisitor {
         DBSPExpression body = new DBSPRawTupleExpression(var.field(0).deref(), new DBSPTupleExpression());
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, node, true, projection);
+                this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, Objects.requireNonNull(result));
     }
@@ -375,4 +423,45 @@ public class Monotonicity extends CircuitVisitor {
     public void postorder(DBSPPrimitiveAggregateOperator node) {
         this.aggregate(node);
     }
+
+    /*
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator node) {
+        // Input type is IndexedZSet<timestamp, tuple>
+        // Output type is IndexedZSet<partition, Tup2<timestamp, aggregateType>>
+        // If the input timestamp is monotone, the output timestamp is too.
+        MonotoneExpression inputValue = this.getMonotoneExpression(node.input());
+        if (inputValue == null)
+            return;
+        IMaybeMonotoneType inputProjection = Monotonicity.getBodyType(inputValue);
+        PartiallyMonotoneTuple tuple = inputProjection.to(PartiallyMonotoneTuple.class);
+        IMaybeMonotoneType timestamp = tuple.getField(0);
+        if (!timestamp.mayBeMonotone())
+            return;
+
+        DBSPType timestampType = timestamp.getType();
+        DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
+        DBSPTypeTupleBase outputValueType = ix.elementType.to(DBSPTypeTupleBase.class);
+
+        assert timestamp.getType().sameType(outputValueType.tupFields[0]) :
+                "Types differ " + timestampType + " and " + outputValueType.tupFields[0];
+        DBSPTypeTupleBase varType = inputProjection.getType().to(DBSPTypeTupleBase.class);
+        assert varType.size() == 2 : "Expected a pair, got " + varType;
+        varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
+        DBSPVariablePath var = new DBSPVariablePath("t", varType);
+        DBSPExpression lowerBound = ExpressionCompiler.makeBinaryExpression(node.getNode(),
+                timestampType, DBSPOpcode.SUB, var.field(0).deref(), node.lower.representation);
+        DBSPExpression body =
+                new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(),
+                        new DBSPTupleExpression(
+                                lowerBound,
+                                new DBSPTupleExpression().some()));
+        DBSPClosureExpression closure = body.closure(var.asParameter());
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
+        MonotoneExpression result = analyzer.applyAnalysis(closure);
+        this.set(node, Objects.requireNonNull(result));
+    }
+     */
 }

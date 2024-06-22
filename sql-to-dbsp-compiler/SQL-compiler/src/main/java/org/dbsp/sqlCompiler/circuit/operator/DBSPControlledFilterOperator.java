@@ -31,13 +31,11 @@ import java.util.Objects;
  * right input is a stream of scalars.  The function is a boolean function
  * that takes an input element and a scalar; when the function returns 'true'
  * the input element makes it to the output. */
-public final class DBSPControlledFilterOperator extends DBSPOperator {
+public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     public DBSPControlledFilterOperator(
             CalciteObject node, DBSPExpression expression,
             DBSPOperator data, DBSPOperator control) {
-        super(node, "controlled_filter", expression, data.getType(), data.isMultiset);
-        this.addInput(data);
-        this.addInput(control);
+        super(node, "controlled_filter", expression, data.getType(), data.isMultiset, data, control);
         // this.checkArgumentFunctionType(expression, 0, data);
     }
 
@@ -108,7 +106,7 @@ public final class DBSPControlledFilterOperator extends DBSPOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPControlledFilterOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                this.inputs.get(0), this.inputs.get(1));
+                this.left(), this.right());
     }
 
     @Override

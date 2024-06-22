@@ -54,6 +54,16 @@ public class MonotoneClosureType implements IMaybeMonotoneType {
     }
 
     @Override
+    public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+        throw new InternalCompilerError("'union' called on a MonotoneClosureType");
+    }
+
+    @Override
+    public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+        throw new InternalCompilerError("'intersection' called on a MonotoneClosureType");
+    }
+
+    @Override
     public boolean mayBeMonotone() {
         return this.bodyType.mayBeMonotone();
     }

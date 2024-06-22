@@ -95,6 +95,9 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
                 keyIndexes++;
             } else {
                 DBSPType fieldType = field.type;
+                // We need here an explicit Option type, because
+                // fieldType may be nullable.  The resulting Rust type will
+                // actually be Option<Option<Type>>.
                 DBSPType some = new DBSPTypeOption(fieldType);
                 fields.add(new DBSPTypeStruct.Field(
                         field.getNode(), field.name, current, some, field.nameIsQuoted));

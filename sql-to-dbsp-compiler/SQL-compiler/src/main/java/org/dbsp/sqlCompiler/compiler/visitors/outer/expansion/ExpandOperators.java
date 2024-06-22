@@ -225,6 +225,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        // This is not true, but we are not analyzing this operator
         this.identity(operator);
     }
 

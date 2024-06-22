@@ -32,6 +32,16 @@ public class MonotoneType extends BaseMonotoneType {
     }
 
     @Override
+    public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+        return this;
+    }
+
+    @Override
+    public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+        return other;
+    }
+
+    @Override
     public String toString() {
         return "Monotone(" + this.type + ")";
     }

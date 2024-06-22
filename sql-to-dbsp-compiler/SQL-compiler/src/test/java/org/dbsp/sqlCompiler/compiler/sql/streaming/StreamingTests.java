@@ -440,7 +440,7 @@ public class StreamingTests extends StreamingTest {
         File script = createInputScript(program);
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.testFilePath, "--handles", "-i",
-                "-TMonotoneAnalyzer=3",
+                // "-TMonotoneAnalyzer=3",
                 script.getPath());
         System.out.println(messages);
         Assert.assertEquals(0, messages.errorCount());

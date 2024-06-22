@@ -40,8 +40,7 @@ public class PartiallyMonotoneTuple implements IMaybeMonotoneType {
     @Override
     @Nullable
     public DBSPType getProjectedType() {
-        if (!this.mayBeMonotone())
-            return null;
+        // May return an empty tuple
         List<IMaybeMonotoneType> monotone = Linq.where(this.fields, IMaybeMonotoneType::mayBeMonotone);
         List<DBSPType> fields = Linq.map(monotone, IMaybeMonotoneType::getProjectedType);
         if (this.raw)
@@ -69,6 +68,20 @@ public class PartiallyMonotoneTuple implements IMaybeMonotoneType {
             return new DBSPRawTupleExpression(results);
         else
             return new DBSPTupleExpression(source.getNode(), results);
+    }
+
+    @Override
+    public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+        return new PartiallyMonotoneTuple(
+                Linq.zip(this.fields, other.to(PartiallyMonotoneTuple.class).fields, IMaybeMonotoneType::union),
+                this.raw);
+    }
+
+    @Override
+    public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+        return new PartiallyMonotoneTuple(
+                Linq.zip(this.fields, other.to(PartiallyMonotoneTuple.class).fields, IMaybeMonotoneType::intersection),
+                this.raw);
     }
 
     public IMaybeMonotoneType getField(int index) {

@@ -7,7 +7,10 @@ import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.InsertLimiters;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -16,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -53,6 +57,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void viewLateness() {
+        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
         String sql = """
                 create table TRANSACTION (
                     trans_date_trans_time TIMESTAMP,
@@ -92,37 +97,37 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 LATENESS TRANSACTION_DEMOGRAPHICS.unix_time 0;
                 
                 CREATE VIEW FEATURE AS
-                        SELECT
-                           cc_num,
-                           dayofweek(trans_date_trans_time) as d,
-                           CASE
-                             WHEN dayofweek(trans_date_trans_time) IN(6, 7) THEN true
-                             ELSE false
-                           END AS is_weekend,
-                           hour(trans_date_trans_time) as hour_of_day,
-                           CASE
-                             WHEN hour(trans_date_trans_time) <= 6 THEN true
-                             ELSE false
-                           END AS is_night,
-                           -- Average spending per day, per week, and per month.
-                           AVG(amt) OVER window_1_day AS avg_spend_pd,
-                           AVG(amt) OVER window_7_day AS avg_spend_pw,
-                           AVG(amt) OVER window_30_day AS avg_spend_pm,
-                           -- Average spending over the last three months for the same day of the week.
-                           COALESCE(
-                            AVG(amt) OVER (
-                              PARTITION BY cc_num, EXTRACT(DAY FROM trans_date_trans_time)
-                              ORDER BY unix_time
-                              RANGE BETWEEN 7776000 PRECEDING and CURRENT ROW
-                            ), 0) AS avg_spend_p3m_over_d,
-                           -- Number of transactions in the last 24 hours.
-                           COUNT(*) OVER window_1_day AS trans_freq_24,
-                           amt, unix_time, zip, city_pop, is_fraud
-                        FROM transaction_demographics
-                        WINDOW
-                          window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
-                          window_7_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
-                          window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
+                SELECT
+                   cc_num,
+                   dayofweek(trans_date_trans_time) as d,
+                   CASE
+                     WHEN dayofweek(trans_date_trans_time) IN(6, 7) THEN true
+                     ELSE false
+                   END AS is_weekend,
+                   hour(trans_date_trans_time) as hour_of_day,
+                   CASE
+                     WHEN hour(trans_date_trans_time) <= 6 THEN true
+                     ELSE false
+                   END AS is_night,
+                   -- Average spending per day, per week, and per month.
+                   AVG(amt) OVER window_1_day AS avg_spend_pd,
+                   AVG(amt) OVER window_7_day AS avg_spend_pw,
+                   AVG(amt) OVER window_30_day AS avg_spend_pm,
+                   -- Average spending over the last three months for the same day of the week.
+                   COALESCE(
+                    AVG(amt) OVER (
+                      PARTITION BY cc_num, EXTRACT(DAY FROM trans_date_trans_time)
+                      ORDER BY unix_time
+                      RANGE BETWEEN 7776000 PRECEDING and CURRENT ROW
+                    ), 0) AS avg_spend_p3m_over_d,
+                   -- Number of transactions in the last 24 hours.
+                   COUNT(*) OVER window_1_day AS trans_freq_24,
+                   amt, unix_time, zip, city_pop, is_fraud
+                FROM transaction_demographics
+                WINDOW
+                  window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
+                  window_7_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
+                  window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
                       ;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;
@@ -161,10 +166,17 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void smallTaxiTest() {
-        String statements = """
+        /*
+        Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
+        Logger.INSTANCE.setLoggingLevel(Monotonicity.class, 2);
+        Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
+        Logger.INSTANCE.setLoggingLevel(InsertLimiters.class, 1);
+        Logger.INSTANCE.setLoggingLevel(MonotoneTransferFunctions.class, 2);
+         */
+        String sql = """
                 CREATE TABLE green_tripdata
                 (
-                  lpep_pickup_datetime TIMESTAMP NOT NULL,
+                  lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
                   lpep_dropoff_datetime TIMESTAMP NOT NULL,
                   pickup_location_id BIGINT NOT NULL,
                   dropoff_location_id BIGINT NOT NULL,
@@ -178,10 +190,13 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 COUNT(*) OVER(
                    PARTITION BY  pickup_location_id
                    ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                   -- 1 hour is 3600  seconds
                    RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip
                 FROM green_tripdata;""";
-        this.compileRustTestCase(statements);
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.incrementalize = true;
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        Assert.assertNotNull(circuit);
     }
 
     @Test

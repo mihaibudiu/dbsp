@@ -40,6 +40,16 @@ public class MonotoneRefType implements IMaybeMonotoneType {
     }
 
     @Override
+    public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+        return new MonotoneRefType(this.base.union(other.to(MonotoneRefType.class).base));
+    }
+
+    @Override
+    public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+        return new MonotoneRefType(this.base.intersection(other.to(MonotoneRefType.class).base));
+    }
+
+    @Override
     public String toString() {
         return "Ref(" + this.base + ")";
     }

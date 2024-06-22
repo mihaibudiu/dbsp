@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
@@ -132,7 +133,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         this.visited.add(operator);
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         if (!Linq.same(sources, operator.inputs)) {
-            Logger.INSTANCE.belowLevel(this, 1)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .append(this.toString())
                     .append(" replacing inputs of ")
                     .increase()

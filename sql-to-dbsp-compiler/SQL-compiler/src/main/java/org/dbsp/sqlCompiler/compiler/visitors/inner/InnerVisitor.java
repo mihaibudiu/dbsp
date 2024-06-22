@@ -68,6 +68,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -610,6 +611,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
 
     public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
 
+    public VisitDecision preorder(DBSPWindowBoundExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
+
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
         return this.preorder(node.to(DBSPExpression.class));
@@ -1123,6 +1126,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPUnsignedUnwrapExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
+    }
+
+    public void postorder(DBSPWindowBoundExpression node) {
         this.postorder(node.to(DBSPExpression.class));
     }
 

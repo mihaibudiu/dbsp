@@ -71,7 +71,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -125,7 +125,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -140,6 +139,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
@@ -1568,7 +1568,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             super(compiler, window, group, windowFieldIndex);
         }
 
-        DBSPExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
+        DBSPWindowBoundExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
             IsNumericType numType = boundType.as(IsNumericType.class);
             if (numType == null) {
                 throw new UnimplementedException("Currently windows must use integer values, so "
@@ -1587,10 +1587,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 else
                     numericBound = new DBSPApplyMethodExpression("to_bound", boundType, value);
             }
-            String beforeAfter = bound.isPreceding() ? "Before" : "After";
-            return new DBSPConstructorExpression(
-                    new DBSPPath("RelOffset", beforeAfter).toExpression(),
-                    DBSPTypeAny.getDefault(), numericBound);
+            return new DBSPWindowBoundExpression(CalciteObject.EMPTY, bound.isPreceding(), numericBound);
         }
 
         @Override
@@ -1639,11 +1636,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.compiler.circuit.addOperator(diff);
 
             // Create window description
-            DBSPExpression lb = this.compileWindowBound(group.lowerBound, unsignedSortType, eComp);
-            DBSPExpression ub = this.compileWindowBound(group.upperBound, unsignedSortType, eComp);
-            DBSPExpression windowExpr = new DBSPConstructorExpression(
-                    new DBSPPath("RelRange", "new").toExpression(),
-                    DBSPTypeAny.getDefault(), lb, ub);
+            DBSPWindowBoundExpression lb = this.compileWindowBound(group.lowerBound, unsignedSortType, eComp);
+            DBSPWindowBoundExpression ub = this.compileWindowBound(group.upperBound, unsignedSortType, eComp);
 
             List<DBSPType> types = Linq.map(aggregateCalls, c -> this.compiler.convertType(c.type, false));
             DBSPTypeTuple tuple = new DBSPTypeTuple(types);
@@ -1668,25 +1662,26 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     makeIndexedZSet(partition.getType(),
                             new DBSPTypeTuple(
                                     orderField.getType(),
-                                    new DBSPTypeOption(aggResultType)));
+                                    aggResultType.setMayBeNull(true)));
+                                    // new DBSPTypeOption(aggResultType)));
 
             // Compute aggregates for the window
             DBSPOperator windowAgg = new DBSPPartitionedRollingAggregateOperator(
                     node, partitioningFunction, null, fd,
-                    windowExpr,
-                    windowOutputType,
-                    diff);
+                    lb, ub, windowOutputType, diff);
             this.compiler.circuit.addOperator(windowAgg);
 
             // map_index(|(key_ts_agg)| (
-            //         Tup2::new(key_to_agg.0.clone(), UnsignedWrapper::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
+            //         Tup2::new(key_to_agg.0.clone(),
+            //                   UnsignedWrapper::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
             //         key_ts_agg.1.1.unwrap_or_default() ))
             DBSPVariablePath var = new DBSPVariablePath("key_ts_agg",
                     new DBSPTypeRawTuple(
                             partition.getType().ref(),
                             new DBSPTypeTuple(
                                     orderField.getType(),  // not the sortType, but the wrapper type around it
-                                    new DBSPTypeOption(aggResultType)).ref()));
+                                    aggResultType.setMayBeNull(true)).ref()));
+                                    // new DBSPTypeOption(aggResultType)).ref()));
             DBSPExpression ixKey = var.field(0).deref().applyCloneIfNeeded();
             DBSPExpression ts = var.field(1).deref().field(0);
             DBSPExpression agg = var.field(1).deref().field(1).applyCloneIfNeeded();
@@ -1743,13 +1738,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .field(indexField++)
                             .applyCloneIfNeeded();
                 else
-                    allFields[i] = left.deref().field(i - indexField).applyCloneIfNeeded();
+                    allFields[i] = left.deepCopy().deref().field(i - indexField).applyCloneIfNeeded();
             }
             for (int i = 0; i < aggResultType.size(); i++) {
                 // Calcite is very smart and sometimes infers non-nullable result types
                 // for these aggregates.  So we have to cast the results to whatever
                 // Calcite says they will be.
-                allFields[i + currentTupleType.size()] = right.deref().field(i).applyCloneIfNeeded().cast(
+                allFields[i + currentTupleType.size()] = right.deepCopy().deref().field(i).applyCloneIfNeeded().cast(
                         this.windowResultType.getFieldType(this.windowFieldIndex + i));
             }
             DBSPTupleExpression addExtraFieldBody = new DBSPTupleExpression(allFields);
