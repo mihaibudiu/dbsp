@@ -688,13 +688,13 @@ public class EndToEndTests extends BaseSQLTests {
         this.testNegativeQuery(query, "DECIMAL type must have scale <= precision");
     }
 
-    // Tested on MySQL
     @Test
     public void decimalParse() {
+        // This is the same as DECIMAL(N, 0), so the result is rounded down
         String query = "SELECT CAST('0.5' AS DECIMAL)";
         this.testConstantOutput(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, 0, false), new BigDecimal("1")))));
+                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, 0, false), new BigDecimal("0")))));
     }
 
     @Test

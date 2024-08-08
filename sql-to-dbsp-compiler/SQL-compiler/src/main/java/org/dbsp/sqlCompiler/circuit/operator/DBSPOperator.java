@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.annotation.Annotation;
@@ -95,6 +97,13 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
                 !outputType.is(DBSPTypeZSet.class) &&
                 !outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Operator output type is unexpected " + outputType);
+        /*
+        Debugging aid
+        if (function != null && function.is(DBSPClosureExpression.class)) {
+            new RepeatedExpressions(new StderrErrorReporter(), true).apply(
+                    function.to(DBSPClosureExpression.class).body);
+        }
+         */
     }
 
     public String getOutputName() {

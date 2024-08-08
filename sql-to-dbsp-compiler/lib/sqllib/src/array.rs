@@ -443,6 +443,16 @@ where
     accumulator.to_vec()
 }
 
+pub fn array_aggN<T>(accumulator: &mut Option<Vec<T>>, value: T, weight: Weight, distinct: bool) -> Option<Vec<T>>
+where
+    T: Clone,
+{
+    match accumulator {
+        None => None,
+        Some(accumulator) => Some(array_agg(accumulator, value, weight, distinct)),
+    }
+}
+
 pub fn array_agg_opt<T>(
     accumulator: &mut Vec<Option<T>>,
     value: Option<T>,
@@ -457,6 +467,22 @@ where
         accumulator.to_vec()
     } else {
         array_agg(accumulator, value, weight, distinct)
+    }
+}
+
+pub fn array_agg_optN<T>(
+    accumulator: &mut Option<Vec<Option<T>>>,
+    value: Option<T>,
+    weight: Weight,
+    distinct: bool,
+    ignore_nulls: bool,
+) -> Option<Vec<Option<T>>>
+where
+    T: Clone,
+{
+    match accumulator {
+        None => None,
+        Some(accumulator) => Some(array_agg_opt(accumulator, value, weight, distinct, ignore_nulls)),
     }
 }
 

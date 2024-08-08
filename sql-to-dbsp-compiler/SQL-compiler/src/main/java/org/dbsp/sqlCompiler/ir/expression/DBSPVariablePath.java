@@ -33,6 +33,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /** A special case of a PathExpression in Rust which refers to a variable by name.
  * More convenient that using always Paths. */
 public final class DBSPVariablePath extends DBSPExpression {
@@ -52,7 +55,7 @@ public final class DBSPVariablePath extends DBSPExpression {
     }
 
     public DBSPParameter asParameter() {
-        return new DBSPParameter(this.variable, this.getType());
+        return new DBSPParameter(this.variable, this.type);
     }
 
     // Do not call this method, it is only used for testing
