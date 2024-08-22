@@ -4,14 +4,17 @@ import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -341,6 +344,7 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void testNow3() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         String sql = """
                 CREATE TABLE T(value INT);
                 CREATE VIEW V AS SELECT SUM(value) + MINUTE(NOW()) FROM T;""";
@@ -380,7 +384,7 @@ public class StreamingTests extends StreamingTestBase {
         String sql = """
                 CREATE TABLE transactions (
                   id INT NOT NULL PRIMARY KEY,
-                  ts TIMESTAMP,
+                  ts TIMESTAMP LATENESS INTERVAL 1 HOUR,
                   users INT,
                   AMOUNT DECIMAL
                 );
@@ -393,7 +397,75 @@ public class StreamingTests extends StreamingTestBase {
                 GROUP BY users""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
-        new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        visitor.apply(ccs.circuit);
+        this.addRustTestCase("testNow4", ccs);
+    }
+
+    @Test
+    public void testNow5() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
+        // now() used in WHERE
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW window_computation AS
+                SELECT *
+                FROM transactions
+                WHERE ts >= now() - INTERVAL 1 DAY""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        visitor.apply(ccs.circuit);
+        ccs.step("""
+                        INSERT INTO transactions VALUES (1, '2024-01-01 00:00:10');
+                        INSERT INTO now VALUES ('2024-01-01 00:00:00');
+                        """,
+                """
+                         id | ts                   | weight
+                        ---------------------------------
+                         1  | 2024-01-01 00:00:10  | 1""");
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 00:01:20');
+                 """,
+                """
+                value | weight
+                ----------------""");
+        ccs.step("""
+                 INSERT INTO transactions VALUES (2, NULL);
+                 INSERT INTO now VALUES ('2024-01-01 00:02:00');
+                 """, """
+                  value | weight
+                 ----------------""");
+        this.addRustTestCase("testNow5", ccs);
     }
 
     @Test

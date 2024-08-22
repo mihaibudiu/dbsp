@@ -19,34 +19,31 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- *
- *
  */
 
-package org.dbsp.sqlCompiler.compiler.errors;
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
-/** Exception thrown when an unsupported construct is compiled.
- * This signals a bug in the user input. */
-public class UnsupportedException extends BaseCompilerException {
-    public static final String KIND = "Not supported";
-
-    public UnsupportedException(CalciteObject obj) {
-        super(KIND, obj);
-    }
-
-    public UnsupportedException(String msg, CalciteObject obj) {
-        super(msg + ": " + obj, obj);
-    }
-
-    public UnsupportedException(String msg, IHasCalciteObject obj) {
-        this(msg, obj.getNode());
+/** Remove I immediately after D.
+ * Run after OptimizeIncrementalVisitor in case this pattern is left over. */
+public class RemoveIAfterD extends CircuitCloneVisitor {
+    public RemoveIAfterD(IErrorReporter reporter) {
+        super(reporter, false);
     }
 
     @Override
-    public String getErrorKind() {
-        return KIND;
+    public void postorder(DBSPIntegrateOperator operator) {
+        DBSPOperator source = this.mapped(operator.input());
+        if (source.is(DBSPDifferentiateOperator.class)) {
+            DBSPUnaryOperator integral = source.to(DBSPUnaryOperator.class);
+            this.map(operator, integral.input(), false);  // It should already be there
+            return;
+        }
+        super.postorder(operator);
     }
 }

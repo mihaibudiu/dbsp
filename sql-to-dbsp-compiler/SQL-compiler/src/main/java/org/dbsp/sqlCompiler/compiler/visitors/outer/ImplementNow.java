@@ -1,17 +1,22 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -27,13 +32,20 @@ import org.dbsp.sqlCompiler.circuit.annotation.NoInc;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -173,6 +185,26 @@ public class ImplementNow extends Passes {
         }
     }
 
+    /** Rewrites every occurrence of now() with a specified parameter. */
+    static class RewriteNowWithParam extends InnerRewriteVisitor {
+        /** Replacement for the now() function */
+        final DBSPExpression replacement;
+
+        public RewriteNowWithParam(IErrorReporter reporter, DBSPExpression replacement) {
+            super(reporter);
+            this.replacement = replacement;
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPApplyExpression expression) {
+            if (ContainsNow.isNow(expression)) {
+                this.map(expression, Objects.requireNonNull(this.replacement));
+                return VisitDecision.STOP;
+            }
+            return super.preorder(expression);
+        }
+    }
+
     /** Replace map operators that contain now() as an expression with
      * map operators that take an extra field and use that instead of the now() call.
      * Insert a join prior to such operators (which also requires a MapIndex operator.
@@ -180,8 +212,9 @@ public class ImplementNow extends Passes {
      * Same for filter operators. */
     static class RewriteNow extends CircuitCloneVisitor {
         // Holds the indexed version of the 'now' operator (indexed with an empty key).
+        // (actually, it's the differentiator after the index)
         @Nullable
-        DBSPOperator nowIndexed = null;
+        DBSPMapIndexOperator nowIndexed = null;
         final ICompilerComponent compiler;
 
         public RewriteNow(IErrorReporter reporter, ICompilerComponent compiler) {
@@ -213,11 +246,8 @@ public class ImplementNow extends Passes {
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                     .closure(key.asParameter(), left.asParameter(), right.asParameter());
             assert nowIndexed != null;
-            DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(operator.getNode(), nowIndexed);
-            dNow.annotations.add(new NoInc());
-            this.addOperator(dNow);
             DBSPStreamJoinOperator join = new DBSPStreamJoinOperator(operator.getNode(), joinType,
-                    joinFunction, operator.isMultiset, index, dNow);
+                    joinFunction, operator.isMultiset, index, nowIndexed);
             this.addOperator(join);
             return join;
         }
@@ -238,27 +268,202 @@ public class ImplementNow extends Passes {
             }
         }
 
+        record WindowBound(boolean inclusive, DBSPExpression expression) {
+            @Nullable WindowBound combine(WindowBound with, boolean lower) {
+                if (this.inclusive != with.inclusive)
+                    return null;
+                DBSPOpcode opcode = lower ? DBSPOpcode.MIN : DBSPOpcode.MAX;
+                DBSPExpression expression = ExpressionCompiler.makeBinaryExpression(this.expression.getNode(),
+                        this.expression.getType(), opcode, this.expression, with.expression);
+                return new WindowBound(this.inclusive, expression);
+            }
+
+            public String toString() {
+                return this.expression.toString();
+            }
+        }
+
+        record WindowBounds(
+                IErrorReporter reporter,
+                @Nullable WindowBound lower,
+                @Nullable WindowBound upper,
+                int fieldIndexed) {
+            // TODO: generalize to work with a list of indexes
+            DBSPClosureExpression makeWindow() {
+                DBSPType type = ContainsNow.timestampType();
+                DBSPVariablePath var = type.ref().var();
+                RewriteNowWithParam rn = new RewriteNowWithParam(this.reporter, var.deref());
+                DBSPExpression lowerBound, upperBound;
+                if (this.lower != null)
+                    lowerBound = rn.apply(this.lower.expression).to(DBSPExpression.class);
+                else
+                    lowerBound = type.to(IsBoundedType.class).getMinValue();
+                if (this.upper != null)
+                    upperBound = rn.apply(this.upper.expression).to(DBSPExpression.class);
+                else
+                    upperBound = type.to(IsBoundedType.class).getMaxValue();
+                return new DBSPRawTupleExpression(
+                        DBSPTypeTypedBox.wrapTypedBox(lowerBound, false),
+                        DBSPTypeTypedBox.wrapTypedBox(upperBound, false))
+                        .closure(var.asParameter());
+            }
+
+            @Override
+            public String toString() {
+                StringBuilder builder = new StringBuilder();
+                builder.append("t.").append(this.fieldIndexed).append(" in ");
+                if (this.lower == null)
+                    builder.append("(*");
+                else
+                    builder.append(this.lower.inclusive ? "[" : "(")
+                            .append(this.lower);
+                builder.append(", ");
+                if (this.upper == null)
+                    builder.append("*)");
+                else
+                    builder.append(this.upper)
+                            .append(this.upper.inclusive ? "]" : ")");
+                return builder.toString();
+            }
+        }
+
+        @Nullable
+        static WindowBound combine(@Nullable WindowBound left, @Nullable WindowBound right, boolean lower) {
+            if (left == null)
+                return right;
+            if (right == null)
+                return left;
+            return left.combine(right, lower);
+        }
+
+        @Nullable WindowBounds findWindowBounds(DBSPExpression expression) {
+            DBSPClosureExpression closure = expression.to(DBSPClosureExpression.class);
+            ComparisonsAnalyzer analyzer = new ComparisonsAnalyzer(closure, false);
+            if (!analyzer.complete || analyzer.comparisons.isEmpty())
+                return null;
+
+            // If not all comparisons compare the same column, give up
+            int columnIndex = -1;
+            for (ComparisonsAnalyzer.Comparison comp: analyzer.comparisons) {
+                if (columnIndex == -1)
+                    columnIndex = comp.columnIndex;
+                else if (columnIndex != comp.columnIndex)
+                    return null;
+            }
+
+            WindowBound lower = null;
+            WindowBound upper = null;
+            for (ComparisonsAnalyzer.Comparison comp: analyzer.comparisons) {
+                boolean inclusive = comp.opcode == DBSPOpcode.GTE || comp.opcode == DBSPOpcode.LTE;
+                boolean toLower = comp.opcode == DBSPOpcode.GTE || comp.opcode == DBSPOpcode.GT;
+                WindowBound result = new WindowBound(inclusive, comp.comparedTo);
+                if (toLower) {
+                    lower = combine(lower, result, toLower);
+                    if (lower == null)
+                        return null;
+                } else {
+                    upper = combine(upper, result, toLower);
+                    if (upper == null)
+                        return null;
+                }
+            }
+            return new WindowBounds(this.errorReporter, lower, upper, columnIndex);
+        }
+
+        public DBSPOperator getNow() {
+            assert this.nowIndexed != null;
+            return this.nowIndexed.inputs.get(0);
+        }
+
+        public DBSPOperator flattenNow() {
+            // An operator that produces a scalar value of the now input
+            // (not a ZSet, but a single scalar).
+            DBSPOperator source = this.getNow();
+            DBSPType type = source.outputType;
+            DBSPVariablePath var = type.ref().var();
+            DBSPClosureExpression function = new DBSPApplyExpression(
+                    source.getNode(), "single", ContainsNow.timestampType(), var).closure(var.asParameter());
+            DBSPOperator result = new DBSPApplyOperator(source.getNode(), function, source, null);
+            this.addOperator(result);
+            return result;
+        }
+
         @Override
         public void postorder(DBSPFilterOperator operator) {
             ContainsNow cn = new ContainsNow(this.errorReporter);
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
-            if (cn.found()) {
-                DBSPOperator join = this.createJoin(operator);
-                RewriteNowExpression rn = new RewriteNowExpression(this.errorReporter);
-                function = rn.apply(function).to(DBSPExpression.class);
-                DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
-                this.addOperator(filter);
-                // Drop the extra field
-                DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
-                List<DBSPExpression> fields = var.deref().allFields();
-                Utilities.removeLast(fields);
-                DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var.asParameter());
-                DBSPMapOperator result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
-                this.map(operator, result);
-            } else {
+            if (!cn.found()) {
                 super.postorder(operator);
+                return;
             }
+
+            // Look for "temporal filters".
+            // These have the shape "&& (t.field > now() + constant)",
+            // where the same field is used in all comparisons
+            WindowBounds bounds = this.findWindowBounds(operator.getFunction());
+            if (bounds != null) {
+                DBSPOperator flattenNow = this.flattenNow();
+                DBSPClosureExpression makeWindow = bounds.makeWindow();
+                DBSPOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
+                        makeWindow, flattenNow, null);
+                this.addOperator(windowBounds);
+
+                // Filter the null timestamps away, they won't be selected anyway,
+                // but window needs non-nullable values
+                DBSPTypeTupleBase inputType = operator.input().getOutputZSetElementType().to(DBSPTypeTupleBase.class);
+                DBSPType fieldType = inputType.getFieldType(bounds.fieldIndexed);
+                DBSPVariablePath v = inputType.ref().var();
+                DBSPClosureExpression nonNull =
+                        new DBSPUnaryExpression(
+                                operator.getNode(),
+                                DBSPTypeBool.create(false),
+                                DBSPOpcode.NOT,
+                                v.deref().field(bounds.fieldIndexed)
+                                        .is_null()).closure(v.asParameter());
+                DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull,
+                        this.mapped(operator.input()));
+                this.addOperator(filter);
+
+                // Index input by timestamp
+                DBSPVariablePath var = inputType.ref().var();
+                DBSPClosureExpression indexFunction =
+                        new DBSPRawTupleExpression(
+                                var.deref().field(bounds.fieldIndexed).cast(fieldType.setMayBeNull(false)),
+                                var.deepCopy().deref().applyClone()).closure(var.asParameter());
+                DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getNode(),
+                        fieldType.setMayBeNull(false),
+                        inputType);
+                DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getNode(),
+                        indexFunction, ix, operator.isMultiset, filter);
+                this.addOperator(index);
+
+                // Apply window function.  Operator is incremental, so add D & I around it
+                DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index);
+                this.addOperator(diffIndex);
+                DBSPOperator window = new DBSPWindowOperator(operator.getNode(), diffIndex, windowBounds);
+                this.addOperator(window);
+                DBSPOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window);
+                this.addOperator(winInt);
+
+                // Deindex result of window
+                DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), winInt);
+                this.map(operator, deindex);
+                return;
+            }
+
+            DBSPOperator join = this.createJoin(operator);
+            RewriteNowExpression rn = new RewriteNowExpression(this.errorReporter);
+            function = rn.apply(function).to(DBSPExpression.class);
+            DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
+            this.addOperator(filter);
+            // Drop the extra field
+            DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
+            List<DBSPExpression> fields = var.deref().allFields();
+            Utilities.removeLast(fields);
+            DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var.asParameter());
+            DBSPMapOperator result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
+            this.map(operator, result);
         }
 
         @Override
@@ -279,13 +484,17 @@ public class ImplementNow extends Passes {
             this.addOperator(now);
             this.map(now, now, false);
 
+            DBSPOperator diff = new DBSPDifferentiateOperator(circuit.getNode(), now);
+            diff.addAnnotation(new NoInc());
+            this.addOperator(diff);
+
             DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
             DBSPExpression indexFunction = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(),
                     var.deref().applyClone());
             this.nowIndexed = new DBSPMapIndexOperator(
                     node, indexFunction.closure(var.asParameter()),
-                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), now);
+                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), diff);
             this.nowIndexed.addAnnotation(new AlwaysMonotone());
             this.addOperator(this.nowIndexed);
         }

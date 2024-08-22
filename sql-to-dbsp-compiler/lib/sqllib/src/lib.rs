@@ -1564,6 +1564,7 @@ where
     T: 'static + Debug,
     F: Fn(&D, &T) -> bool,
 {
+    // println!("CF thread={}", Runtime::worker_index());
     let factories = OrdZSetFactories::new::<D, (), ZWeight>();
 
     let mut builder = OrdWSetBuilder::with_capacity(&factories, (), data.len());
@@ -1573,6 +1574,7 @@ where
         let weight = *cursor.weight().deref();
         let item = unsafe { cursor.key().downcast::<D>() };
         if comparator(item, value) {
+            // println!("controlled_filter accepts={:?}", item);
             builder.push_refs(item.erase(), ().erase(), weight.erase());
         } else {
             late();
@@ -1680,4 +1682,19 @@ where
         cursor.step_key();
     }
     false
+}
+
+// Return the single element expected in a WSet
+pub fn single<T>(data: &WSet<Tup1<T>>) -> T
+where
+    T: DBData + Clone,
+{
+    // println!("thread={}", Runtime::worker_index());
+    let cursor = data.cursor();
+    while cursor.key_valid() {
+        let key: Tup1<T> = unsafe { cursor.key().downcast::<Tup1<T>>() }.clone();
+        // println!("single={:?}", key);
+        return key.0;
+    }
+    panic!("No data in set!");
 }

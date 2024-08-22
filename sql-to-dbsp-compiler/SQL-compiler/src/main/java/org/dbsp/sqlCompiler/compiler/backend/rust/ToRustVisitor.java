@@ -1195,6 +1195,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPConstantOperator operator) {
+        assert !operator.incremental; // TODO
         assert operator.function != null;
         builder.append("let ")
                 .append(operator.getOutputName())

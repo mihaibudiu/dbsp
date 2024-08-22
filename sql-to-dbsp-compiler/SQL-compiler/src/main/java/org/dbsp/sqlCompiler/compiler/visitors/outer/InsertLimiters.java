@@ -290,6 +290,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPWindowOperator operator) {
+        ReplacementExpansion expanded = this.getReplacement(operator);
+        if (expanded != null) {
+            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
+            if (operator != expanded.replacement && bound != null)
+                this.markBound(operator, bound);
+        } else {
+            this.nonMonotone(operator);
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPFilterOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
@@ -411,7 +424,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         final DBSPVariablePath var = varType.var();
         DBSPExpression body = var.field(0).deref();
-        body = this.wrapTypedBox(body, true);
+        body = DBSPTypeTypedBox.wrapTypedBox(body, true);
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
@@ -1129,11 +1142,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 operator.getNode(), replacement, Monotonicity.getBodyType(expression), delay);
     }
 
-    DBSPExpression wrapTypedBox(DBSPExpression expression, boolean typed) {
-        DBSPType type = new DBSPTypeTypedBox(expression.getType(), typed);
-        return new DBSPUnaryExpression(expression.getNode(), type, DBSPOpcode.TYPEDBOX, expression);
-    }
-
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
         ReplacementExpansion replacementExpansion = Objects.requireNonNull(this.getReplacement(operator));
@@ -1185,8 +1193,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
             DBSPVariablePath var = timestamp.getType().ref().var();
             DBSPExpression makePair = new DBSPRawTupleExpression(
-                    this.wrapTypedBox(minimums.get(0), false),
-                    this.wrapTypedBox(var.deref().field(0), false));
+                    DBSPTypeTypedBox.wrapTypedBox(minimums.get(0), false),
+                    DBSPTypeTypedBox.wrapTypedBox(var.deref().field(0), false));
             DBSPApplyOperator apply = new DBSPApplyOperator(
                     operator.getNode(), makePair.closure(var.asParameter()), waterline,
                     "(" + operator.getDerivedFrom() + ")");
