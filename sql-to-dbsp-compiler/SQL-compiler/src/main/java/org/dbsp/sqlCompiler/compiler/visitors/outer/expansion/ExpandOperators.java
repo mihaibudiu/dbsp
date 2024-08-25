@@ -142,6 +142,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPStreamAggregateOperator operator) {
+        /*
         if (operator.isLinear) {
             DBSPOperator input = this.mapped(operator.input());
             DBSPExpression function = operator.getAggregate().combineLinear();
@@ -161,9 +162,9 @@ public class ExpandOperators extends CircuitCloneVisitor {
                     operator.getOutputIndexedZSetType(), weightedSum, null, weigh, false);
             this.map(operator, result);
             this.addExpansion(operator, new StreamAggregateExpansion(weigh, result));
-        } else {
-            this.replace(operator);
-        }
+        } else ....
+         */
+        this.replace(operator);
     }
 
     @Override

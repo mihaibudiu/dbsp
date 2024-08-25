@@ -165,7 +165,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
         if (source.is(DBSPIntegrateOperator.class)) {
             DBSPOperator replace = new DBSPAggregateOperator(
                     source.getNode(), operator.getOutputIndexedZSetType(),
-                    operator.function, operator.aggregate, source.inputs.get(0), operator.isLinear);
+                    operator.function, operator.aggregate, source.inputs.get(0));
             this.addOperator(replace);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replace);
             this.map(operator, integral);
