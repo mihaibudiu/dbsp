@@ -117,6 +117,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -778,6 +779,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 return VisitDecision.STOP;
             }
         }
+
+        DBSPTypeTupleBase sourceTuple = sourceType.as(DBSPTypeTupleBase.class);
+        DBSPTypeTupleBase destTuple = destType.as(DBSPTypeTupleBase.class);
+        if (sourceTuple != null || destTuple != null) {
+            // TODO
+        }
+
 
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -429,16 +430,13 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPVariantLiteral expression) {
         this.push(expression);
-        DBSPExpression value = null;
-        if (expression.value != null)
-            value = this.transform(expression.value);
+        DBSPExpression value = this.transformN(expression.value);
         this.pop(expression);
         DBSPExpression result;
         if (expression.isSqlNull) {
             result = DBSPVariantLiteral.sqlNull(expression.mayBeNull());
         } else {
-            result = new DBSPVariantLiteral(
-                    value != null ? value.to(DBSPLiteral.class) : null, expression.type.mayBeNull);
+            result = new DBSPVariantLiteral(value, expression.type.mayBeNull);
         }
         this.map(expression, result);
         return VisitDecision.STOP;

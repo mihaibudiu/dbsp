@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -52,12 +53,7 @@ public final class DBSPCastExpression extends DBSPExpression {
 
     void validate() {
         DBSPType sourceType = source.getType();
-        if (type.is(DBSPTypeVariant.class))
-            // Any cast to variant is ok
-            return;
-        if (type.is(DBSPTypeBaseType.class))
-            assert sourceType.is(DBSPTypeBaseType.class);
-        else if (type.is(DBSPTypeVec.class)) {
+        if (type.is(DBSPTypeVec.class)) {
             if (!sourceType.is(DBSPTypeVec.class) &&
                     !sourceType.is(DBSPTypeVariant.class)) {
                 this.unsupported();
@@ -67,8 +63,8 @@ public final class DBSPCastExpression extends DBSPExpression {
                     !sourceType.is(DBSPTypeVariant.class)) {
                 this.unsupported();
             }
-        } else if (type.is(DBSPTypeTuple.class)) {
-            if (!sourceType.is(DBSPTypeTuple.class) &&
+        } else if (type.is(DBSPTypeTupleBase.class)) {
+            if (!sourceType.is(DBSPTypeTupleBase.class) &&
                     !sourceType.is(DBSPTypeVariant.class)) {
                 this.unsupported();
             }
@@ -78,10 +74,12 @@ public final class DBSPCastExpression extends DBSPExpression {
             }
         }
         if (type.is(DBSPTypeVariant.class)) {
-            if (sourceType.is(DBSPTypeTuple.class)) {
+            if (sourceType.is(DBSPTypeTupleBase.class)) {
                 // TODO
                 this.unimplemented();
             }
+        } else if (type.is(DBSPTypeBaseType.class)) {
+            assert sourceType.is(DBSPTypeBaseType.class);
         }
     }
 
