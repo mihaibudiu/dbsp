@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
-import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -66,7 +65,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
@@ -229,7 +227,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPTypeFunction type) {
         this.push(type);
         DBSPType resultType = this.transform(type.resultType);
-        DBSPType[] argTypes = this.transform(type.argumentTypes);
+        DBSPType[] argTypes = this.transform(type.parameterTypes);
         this.pop(type);
         DBSPType result = new DBSPTypeFunction(resultType, argTypes);
         this.map(type, result);
@@ -262,7 +260,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] elements = this.transform(type.tupFields);
         this.pop(type);
-        DBSPType result = new DBSPTypeTuple(type.getNode(), type.mayBeNull, elements);
+        DBSPType result = new DBSPTypeTuple(type.getNode(), type.mayBeNull, type.originalStruct, elements);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -1092,9 +1090,10 @@ public abstract class InnerRewriteVisitor
         this.pop(expression);
         DBSPExpression result;
         if (fields == null)
-            result = new DBSPTupleExpression(expression.getType().to(DBSPTypeTuple.class));
+            result = expression.getType().none();
         else
-            result = new DBSPTupleExpression(expression.getNode(), expression.getType().mayBeNull, fields);
+            result = new DBSPTupleExpression(
+                    expression.getNode(), expression.getTypeAsTuple(), fields);
         // assert expression.getType().sameType(result.getType());
         this.map(expression, result);
         return VisitDecision.STOP;

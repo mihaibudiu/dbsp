@@ -17,7 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Represents a (constant) map described by its elements. */
+/** Represents a map constructor.
+ * TODO: this should not extend DBSPLiteral, since it's not always a constant. */
 public final class DBSPMapLiteral extends DBSPLiteral {
     // Both lists must have the same length
     @Nullable

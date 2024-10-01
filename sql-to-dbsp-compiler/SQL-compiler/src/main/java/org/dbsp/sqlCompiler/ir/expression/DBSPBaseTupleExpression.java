@@ -83,7 +83,7 @@ public abstract class DBSPBaseTupleExpression
         return this.fromFields(fields);
     }
 
-    public DBSPTypeTupleBase getTupleType() {
+    public DBSPTypeTupleBase getTypeAsTupleBase() {
         return this.getType().to(DBSPTypeTupleBase.class);
     }
 

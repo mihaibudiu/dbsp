@@ -27,6 +27,7 @@ import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -117,7 +118,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -712,6 +712,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
+    void unimplementedCast(DBSPCastExpression expression) {
+        throw new UnimplementedException(
+                "Cast from " + expression.source.getType() + " to " + expression.getType() +
+                " not implemented", expression.getNode());
+    }
+
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         /* Default implementation of cast of a source expression to the 'this' type.
@@ -719,11 +725,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
-        DBSPTypeVec sourceVec = sourceType.as(DBSPTypeVec.class);
-        DBSPTypeVec destVec = destType.as(DBSPTypeVec.class);
+        if (destType.sameType(sourceType)) {
+            expression.source.accept(this);
+            return VisitDecision.STOP;
+        }
+
+        DBSPTypeVec sourceVecType = sourceType.as(DBSPTypeVec.class);
+        DBSPTypeVec destVecType = destType.as(DBSPTypeVec.class);
         String functionName;
 
-        if (destVec != null) {
+        if (destVecType != null) {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to vec
                 functionName = "cast_to_vec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
@@ -734,7 +745,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
         }
 
-        if (sourceVec != null) {
+        if (sourceVecType != null) {
             if (destType.is(DBSPTypeVariant.class)) {
                 // cast vec to variant
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
@@ -744,16 +755,33 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 return VisitDecision.STOP;
             }
 
-            if (destVec == null)
+            if (destVecType == null)
                 throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
-            if (destVec.getElementType().sameType(sourceVec.getElementType()) &&
-                destVec.mayBeNull && !sourceVec.mayBeNull) {
-                // TODO: This can happen when source is an empty vector literal with unknown type.
-                // Can anything else happen?
-                // Handle cast Vec<i> to Vec<i>?
-                expression.source.some().accept(this);
+            if (destVecType.getElementType().sameType(sourceVecType.getElementType())) {
+                if (destVecType.mayBeNull && !sourceVecType.mayBeNull) {
+                    // Handle cast Vec<i> to Vec<i>?
+                    expression.source.some().accept(this);
+                } else {
+                    this.unimplementedCast(expression);
+                }
             } else {
-                expression.source.accept(this);
+                if (destVecType.mayBeNull && !sourceVecType.mayBeNull)
+                    this.builder.append("Some(");
+                if (sourceVecType.getElementType().is(DBSPTypeAny.class)) {
+                    // This should only happen for an empty vector - these have an unknown element type
+                    // These can be created using an empty literal or a call to the "array" function.
+                    expression.source.accept(this);
+                } else {
+                    // elements have different types, cast them recursively
+                    expression.source.accept(this);
+                    this.builder.append(".iter().map(");
+                    DBSPVariablePath var = sourceVecType.getElementType().ref().var();
+                    DBSPExpression cast = var.deref().cast(destVecType.getElementType()).closure(var.asParameter());
+                    cast.accept(this);
+                    this.builder.append(").collect()");
+                }
+                if (destVecType.mayBeNull && !sourceVecType.mayBeNull)
+                    this.builder.append(")");
             }
             return VisitDecision.STOP;
         }
@@ -780,12 +808,30 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
         }
 
-        DBSPTypeTupleBase sourceTuple = sourceType.as(DBSPTypeTupleBase.class);
-        DBSPTypeTupleBase destTuple = destType.as(DBSPTypeTupleBase.class);
-        if (sourceTuple != null || destTuple != null) {
-            // TODO
+        DBSPTypeTuple sourceTuple = sourceType.as(DBSPTypeTuple.class);
+        if (sourceTuple != null) {
+            if (destType.is(DBSPTypeVariant.class)) {
+                // should have been eliminated by ExpandVariantCast pass.
+                this.unimplementedCast(expression);
+            } else {
+                if (destType.is(DBSPTypeTuple.class)) {
+                    // only supported if the cast adds nullability
+                    if (destType.sameTypeIgnoringNullability(sourceTuple)) {
+                        if (destType.mayBeNull) {
+                            this.builder.append("Some(");
+                            expression.source.accept(this);
+                            this.builder.append(")");
+                            return VisitDecision.STOP;
+                        }
+                    }
+                }
+                this.unimplementedCast(expression);
+            }
         }
-
+        DBSPTypeTuple destTuple = destType.as(DBSPTypeTuple.class);
+        if (destTuple != null) {
+            this.unimplementedCast(expression);
+        }
 
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();

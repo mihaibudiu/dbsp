@@ -325,7 +325,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                                     " which is not a PRIMARY KEY");
                     continue;
                 }
-                if (!selfMeta.type.setMayBeNull(false).sameType(otherMeta.type.setMayBeNull(false))) {
+                if (!selfMeta.type.sameTypeIgnoringNullability(otherMeta.type)) {
                     this.reportError(selfColumn.getSourcePosition(),
                             "Mismatched FOREIGN KEY column types",
                             "FOREIGN KEY column " +

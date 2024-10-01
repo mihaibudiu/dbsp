@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
@@ -70,13 +69,13 @@ public final class DBSPCastExpression extends DBSPExpression {
             }
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // TODO
-                this.unimplemented();
+                // this.unimplemented();
             }
         }
-        if (type.is(DBSPTypeVariant.class)) {
+        else if (type.is(DBSPTypeVariant.class)) {
             if (sourceType.is(DBSPTypeTupleBase.class)) {
                 // TODO
-                this.unimplemented();
+                // this.unimplemented();
             }
         } else if (type.is(DBSPTypeBaseType.class)) {
             assert sourceType.is(DBSPTypeBaseType.class);

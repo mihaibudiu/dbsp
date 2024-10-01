@@ -100,7 +100,7 @@ public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
         } else if (type.is(DBSPTypeVec.class)) {
             return new DBSPVecLiteral(type, true);
         } else if (type.is(DBSPTypeTuple.class)) {
-            return new DBSPTupleExpression(type.to(DBSPTypeTuple.class));
+            return DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeNull.class)) {
             return new DBSPNullLiteral();
         } else if (type.is(DBSPTypeTimestamp.class)) {

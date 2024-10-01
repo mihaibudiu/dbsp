@@ -1592,6 +1592,16 @@ where
     vec.into()
 }
 
+pub fn cast_to_V_vecN<T>(vec: Option<Vec<T>>) -> Variant
+where
+    Variant: From<T>,
+{
+    match vec {
+        None => Variant::SqlNull,
+        Some(vec) => vec.into(),
+    }
+}
+
 pub fn cast_to_vec_V<T>(value: Variant) -> Vec<T>
 where
     Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -1633,6 +1643,18 @@ where
     V: Clone,
 {
     map.into()
+}
+
+pub fn cast_to_V_mapN<K, V>(map: Option<BTreeMap<K, V>>) -> Variant
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    match map {
+        None => Variant::SqlNull,
+        Some(map) => map.into(),
+    }
 }
 
 pub fn cast_to_map_V<K, V>(value: Variant) -> BTreeMap<K, V>

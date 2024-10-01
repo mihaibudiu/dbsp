@@ -386,12 +386,36 @@ public class VariantTests extends BaseSQLTests {
     public void structTests() {
         this.testQuery("SELECT CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT)",
                 new DBSPVariantLiteral(
-                        new DBSPTupleExpression(
-                                new DBSPI32Literal(2),
-                                new DBSPStringLiteral("a"),
-                                new DBSPVecLiteral(
-                                        new DBSPI32Literal(1),
-                                        new DBSPI32Literal(2),
-                                        new DBSPI32Literal(3)))));
+                        new DBSPMapLiteral(
+                                new DBSPTypeMap(DBSPTypeString.varchar(false),
+                                        new DBSPTypeVariant(false), false),
+                                Linq.list(
+                                        new DBSPStringLiteral("I"),
+                                        new DBSPStringLiteral("S"),
+                                        new DBSPStringLiteral("A")
+                                ),
+                                Linq.list(
+                                        new DBSPVariantLiteral(new DBSPI32Literal(2)),
+                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
+                                        new DBSPVariantLiteral(new DBSPVecLiteral(
+                                                new DBSPI32Literal(1),
+                                                new DBSPI32Literal(2),
+                                                new DBSPI32Literal(3)))))));
+        this.testQuery("SELECT TO_JSON(CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT))",
+                new DBSPStringLiteral("{\"A\":[1,2,3],\"I\":2,\"S\":\"a\"}", true));
+        this.testQuery("SELECT CAST(PARSE_JSON('{\"I\": 2, \"S\": \"a\", \"A\": [1, 2, 3]}') AS S)",
+                new DBSPTupleExpression(true,
+                        new DBSPI32Literal(2, true),
+                        new DBSPStringLiteral("a", true),
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1, true),
+                                new DBSPI32Literal(2, true),
+                                new DBSPI32Literal(3, true))));
+    }
+
+    @Test
+    public void nestedStructTest() {
+        this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, 2, 3]), s(3, 'b', array())]) AS VARIANT))",
+                new DBSPStringLiteral("{\"A\":[1,2,3],\"I\":2,\"S\":\"a\"}", true));
     }
 }
