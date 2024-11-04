@@ -43,7 +43,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -342,7 +342,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void processNode(IDBSPNode node) {
-        DBSPOperator op = node.as(DBSPOperator.class);
+        DBSPSimpleOperator op = node.as(DBSPSimpleOperator.class);
         if (op != null)
             this.generateOperator(op);
         IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
@@ -352,14 +352,14 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    void generateOperator(DBSPOperator operator) {
+    void generateOperator(DBSPSimpleOperator operator) {
         String str = operator.getNode().toInternalString();
         this.writeComments(str);
         operator.accept(this);
         this.builder.newline();
     }
 
-    String handleName(DBSPOperator operator) {
+    String handleName(DBSPSimpleOperator operator) {
         return "handle" + operator.id;
     }
 
@@ -394,7 +394,7 @@ public class ToRustVisitor extends CircuitVisitor {
             signature.append("Catalog");
         } else {
             signature.append("(");
-            for (DBSPOperator input: circuit.sourceOperators.values()) {
+            for (DBSPSimpleOperator input: circuit.sourceOperators.values()) {
                 DBSPType type;
                 DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
                 if (zset != null) {
@@ -411,7 +411,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 signature.append(", ");
             }
             for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
-                DBSPType outputType = output.input().outputType;
+                DBSPType outputType = output.input().outputType();
                 signature.append("OutputHandle<");
                 outputType.accept(inner);
                 signature.append(">, ");
@@ -801,7 +801,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPOperator operator) {
+    public VisitDecision preorder(DBSPSimpleOperator operator) {
         FindComparators compFinder = new FindComparators(this.errorReporter);
         FindStatics staticsFinder = new FindStatics(this.errorReporter);
         if (operator.function != null) {
@@ -1272,7 +1272,7 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.builder.intercalate("\n", parts);
     }
 
-     IIndentStream writeComments(DBSPOperator operator) {
+     IIndentStream writeComments(DBSPSimpleOperator operator) {
         return this.writeComments(operator.getClass().getSimpleName() +
                 " " + operator.getIdString() +
                 (operator.comment != null ? "\n" + operator.comment : ""));
@@ -1325,7 +1325,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    VisitDecision constantLike(DBSPOperator operator) {
+    VisitDecision constantLike(DBSPSimpleOperator operator) {
         assert operator.function != null;
         builder.append("let ")
                 .append(operator.getOutputName())
