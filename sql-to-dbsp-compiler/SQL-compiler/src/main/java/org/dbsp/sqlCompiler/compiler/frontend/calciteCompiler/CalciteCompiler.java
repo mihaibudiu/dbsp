@@ -105,6 +105,7 @@ import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -338,12 +339,12 @@ public class CalciteCompiler implements IWritesLogs {
     };
 
     /** Invoked when front-end compilation is finished, to do additional validation */
-    public void endCompilation(IErrorReporter reporter) {
+    public void endCompilation(DBSPCompiler compiler) {
         for (var declared: this.declaredViews.keySet()) {
             if (this.usedViewDeclarations.contains(declared) || this.definedViews.contains(declared))
                 continue;
             DeclareViewStatement dv = this.declaredViews.get(declared);
-            reporter.reportWarning(dv.getPosition(), "Unused view declaration",
+            compiler.reportWarning(dv.getPosition(), "Unused view declaration",
                     "Declared recursive view " + Utilities.singleQuote(declared) + " not used");
         }
     }
@@ -352,10 +353,10 @@ public class CalciteCompiler implements IWritesLogs {
      * We need to do these before conversion to Rel, because Rel
      * does not have source position information anymore. */
     public class ValidateTypes extends SqlShuttle {
-        final IErrorReporter reporter;
+        final IErrorReporter errorReporter;
 
-        public ValidateTypes(IErrorReporter reporter) {
-            this.reporter = reporter;
+        public ValidateTypes(IErrorReporter errorReporter) {
+            this.errorReporter = errorReporter;
         }
 
         @Override
@@ -367,12 +368,12 @@ public class CalciteCompiler implements IWritesLogs {
                 if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
                     if (basic.getPrecision() < basic.getScale()) {
                         SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
-                        this.reporter.reportError(position,
+                        this.errorReporter.reportError(position,
                                 "Illegal type", "DECIMAL type must have scale <= precision");
                     }
                 } else if (relDataType.getSqlTypeName() == SqlTypeName.FLOAT) {
                     SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
-                    this.reporter.reportError(position,
+                    this.errorReporter.reportError(position,
                             "Illegal type", "Do not use the FLOAT type, please use REAL or DOUBLE");
                 }
             }

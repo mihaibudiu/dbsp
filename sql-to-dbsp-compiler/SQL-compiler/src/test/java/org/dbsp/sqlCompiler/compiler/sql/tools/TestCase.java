@@ -74,14 +74,14 @@ public class TestCase {
 
         int pair = 0;
         for (InputOutputChange changes : this.ccs.stream.changes) {
-            Change inputs = changes.getInputs().simplify();
-            Change outputs = changes.getOutputs().simplify();
+            Change inputs = changes.getInputs().simplify(this.ccs.compiler);
+            Change outputs = changes.getOutputs().simplify(this.ccs.compiler);
 
             TableValue[] tableValues = new TableValue[inputs.getSetCount()];
             for (int i = 0; i < inputs.getSetCount(); i++)
                 tableValues[i] = new TableValue("t" + i, inputs.getSet(i));
             String functionName = "input" + pair;
-            DBSPFunction inputFunction = TableValue.createInputFunction(
+            DBSPFunction inputFunction = TableValue.createInputFunction(this.ccs.compiler,
                     functionName, tableValues, codeDirectory, "csv");
             list.add(new DBSPFunctionItem(inputFunction));
             DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());

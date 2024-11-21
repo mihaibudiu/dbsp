@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -10,15 +9,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -34,6 +29,7 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void issue2846() {
+        this.showFinal();
         String sql = """
                 CREATE TABLE t1(
                     x INT,
@@ -69,7 +65,7 @@ public class StreamingTests extends StreamingTestBase {
 
 
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
             @Override
@@ -174,7 +170,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM t
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -247,7 +243,7 @@ public class StreamingTests extends StreamingTestBase {
                     OVER (ORDER BY ts)
                 FROM t1;""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
             int window = 0;
 
@@ -280,7 +276,7 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT X, SUM(TS / 2), MAX(TS * 2) FROM T
                 GROUP BY X;""";
         var ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -343,7 +339,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM v
                 GROUP BY lts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -383,7 +379,7 @@ public class StreamingTests extends StreamingTestBase {
                     ts, a;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -568,7 +564,8 @@ public class StreamingTests extends StreamingTestBase {
                     MATCH_CONDITION(transaction.unix_time <= feedback.unix_time)
                     ON transaction.id = feedback.id;
                 """;
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -581,7 +578,6 @@ public class StreamingTests extends StreamingTestBase {
                 Assert.assertEquals(1, this.integrate_trace);
             }
         };
-           CompilerCircuitStream ccs = this.getCCS(sql);
         visitor.apply(ccs.circuit);
         this.addRustTestCase(ccs);
     }
@@ -707,7 +703,7 @@ public class StreamingTests extends StreamingTestBase {
         compiler.compileStatement(OtherTests.ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             boolean found = false;
 
             @Override
@@ -756,7 +752,7 @@ public class StreamingTests extends StreamingTestBase {
         // There should be 2 retain keys:
         // - one for the aggregate_linear
         // - one for the final window
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -790,7 +786,7 @@ public class StreamingTests extends StreamingTestBase {
                 group by ts;""";
            CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -946,7 +942,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE ts >= now() - INTERVAL 1 DAY
                 GROUP BY users""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -983,7 +979,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1040,7 +1036,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts >= year(now()) + 10""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1077,7 +1073,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1117,7 +1113,7 @@ public class StreamingTests extends StreamingTestBase {
                       id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       id = 4;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1154,7 +1150,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       EXTRACT(CENTURY FROM now()) % 10 = 0;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int waterline = 0;
 
@@ -1191,7 +1187,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE end > start;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrate_trace = 0;
 
             @Override
@@ -1364,7 +1360,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM tripdata;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int rolling_waterline = 0;
             int integrate_trace = 0;
 
@@ -1434,7 +1430,7 @@ public class StreamingTests extends StreamingTestBase {
                  (SELECT pickup + INTERVAL 5 MINUTES FROM series));""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1776,7 +1772,7 @@ public class StreamingTests extends StreamingTestBase {
             JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call;""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1811,7 +1807,7 @@ public class StreamingTests extends StreamingTestBase {
             """;
         CompilerCircuitStream ccs = this.getCCS(script);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1847,7 +1843,7 @@ public class StreamingTests extends StreamingTestBase {
             """;
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1883,7 +1879,7 @@ public class StreamingTests extends StreamingTestBase {
             """;
         CompilerCircuitStream ccs = this.getCCS(script);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override
@@ -1979,7 +1975,7 @@ public class StreamingTests extends StreamingTestBase {
                 group by ts;
                 """;
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int count = 0;
 
             @Override

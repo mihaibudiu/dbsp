@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
@@ -26,8 +26,8 @@ public class Change {
         }
     }
 
-    public Change simplify() {
-        Simplify simplify = new Simplify(new StderrErrorReporter());
+    public Change simplify(DBSPCompiler compiler) {
+        Simplify simplify = new Simplify(compiler);
         DBSPZSetLiteral[] simplified = Linq.map(this.sets,
                 t -> simplify.apply(t).to(DBSPZSetLiteral.class), DBSPZSetLiteral.class);
         return new Change(simplified);

@@ -216,7 +216,7 @@ public class RegressionTests extends SqlIoTest {
         // This is not executed, since the udfs have no definitions
         var ccs = this.getCCS(sql);
         // Test that code generation does not crash
-        ToRustVisitor.toRustString(new StderrErrorReporter(), ccs.circuit, ccs.compiler.options);
+        ToRustVisitor.toRustString(ccs.compiler, ccs.circuit, ccs.compiler.options);
     }
 
     @Test
@@ -671,7 +671,7 @@ public class RegressionTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int filterJoin = 0;
 
             @Override
@@ -847,7 +847,7 @@ public class RegressionTests extends SqlIoTest {
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int mapIndex = 0;
 
             @Override
@@ -970,7 +970,7 @@ public class RegressionTests extends SqlIoTest {
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(compiler) {
             int count = 0;
 
             @Override

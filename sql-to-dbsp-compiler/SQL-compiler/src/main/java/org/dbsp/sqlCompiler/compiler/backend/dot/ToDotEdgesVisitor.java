@@ -2,12 +2,12 @@ package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -27,8 +27,8 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     protected final int details;
     protected final Set<DBSPOperator> edgesLabeled;
 
-    public ToDotEdgesVisitor(IErrorReporter reporter, IndentStream stream, int details) {
-        super(reporter);
+    public ToDotEdgesVisitor(DBSPCompiler compiler, IndentStream stream, int details) {
+        super(compiler);
         this.stream = stream;
         this.details = details;
         this.edgesLabeled = new HashSet<>();
@@ -37,12 +37,32 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     public String getEdgeLabel(OutputPort source) {
         DBSPType type = source.getOutputRowType();
         return ToRustInnerVisitor.toRustString(
-                this.errorReporter, type, CompilerOptions.getDefault(), true);
+                this.compiler(), type, CompilerOptions.getDefault(), true);
     }
 
     @Override
     public Token startVisit(IDBSPOuterNode node) {
         return super.startVisit(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPOperatorWithError node) {
+        for (OutputPort i : node.inputs) {
+            DBSPOperator input = i.node();
+            this.stream.append(input.getOutputName(i.outputNumber))
+                    .append(" -> ")
+                    .append(node.getOutputName(0));
+            if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
+                String label = this.getEdgeLabel(i);
+                this.stream.append(" [xlabel=")
+                        .append(Utilities.doubleQuote(label))
+                        .append("]");
+                this.edgesLabeled.add(input);
+            }
+            this.stream.append(";")
+                    .newline();
+        }
+        return VisitDecision.STOP;
     }
 
     @Override

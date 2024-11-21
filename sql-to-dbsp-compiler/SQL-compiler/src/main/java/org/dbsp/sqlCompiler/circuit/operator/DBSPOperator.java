@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotation;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -109,6 +110,16 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     public boolean inputsDiffer(List<OutputPort> newInputs) {
         return this.inputsDiffer(newInputs, true);
+    }
+
+    public String getIdString() {
+        String name = CompactName.getCompactName(this);
+        if (name != null)
+            return name;
+        String result = Long.toString(this.id);
+        if (this.derivedFrom >= 0)
+            result += "(" + this.derivedFrom + ")";
+        return result;
     }
 
     /** True if this is equivalent with the other operator,

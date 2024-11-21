@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.annotation.NoInc;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.Linq;
@@ -39,8 +39,8 @@ import java.util.Set;
 /** This visitor optimizes incremental circuits by pushing integral operators
  * forward. */
 public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
-    public OptimizeIncrementalVisitor(IErrorReporter reporter) {
-        super(reporter, false);
+    public OptimizeIncrementalVisitor(DBSPCompiler compiler) {
+        super(compiler, false);
     }
 
     /** If a nested operator is here the integrators from the input will be

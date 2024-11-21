@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.parser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.MapEntry;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Utilities;
 
@@ -45,16 +46,16 @@ public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment
     }
 
     /** Report an error for duplicate property names */
-    public void checkDuplicates(IErrorReporter errorReporter) {
+    public void checkDuplicates(IErrorReporter reporter) {
         Map<String, SqlFragment> previous = new HashMap<>();
         for (Map.Entry<SqlFragment, SqlFragment> p: this.propertyValue) {
             String keyString = p.getKey().getString();
             if (previous.containsKey(keyString)) {
                 SqlFragment prev = Utilities.getExists(previous, keyString);
-                errorReporter.reportError(p.getKey().getSourcePosition(),
+                reporter.reportError(p.getKey().getSourcePosition(),
                         "Duplicate key", "property " + Utilities.singleQuote(keyString) +
                                 " already declared");
-                errorReporter.reportError(prev.getSourcePosition(),
+                reporter.reportError(prev.getSourcePosition(),
                         "Duplicate key", "Previous declaration", true);
                 continue;
             }

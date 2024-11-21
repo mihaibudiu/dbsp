@@ -24,7 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
@@ -48,22 +48,22 @@ import java.util.Set;
  * - Group SCC nodes into {@link DBSPNestedOperator} operators
  * - Validate contents of nested operators. */
 public class RecursiveComponents extends Passes {
-    public RecursiveComponents(IErrorReporter reporter) {
-        super("Recursive", reporter);
-        Graph graph = new Graph(reporter);
+    public RecursiveComponents(DBSPCompiler compiler) {
+        super("Recursive", compiler);
+        Graph graph = new Graph(compiler);
         this.add(graph);
-        this.add(new FixupViewReferences(reporter, graph.getGraphs()));
-        Graph graph2 = new Graph(reporter);
+        this.add(new FixupViewReferences(compiler, graph.getGraphs()));
+        Graph graph2 = new Graph(compiler);
         this.add(graph2);
-        this.add(new BuildNestedOperators(reporter, graph2.getGraphs()));
-        this.add(new ValidateRecursiveOperators(reporter));
-        // this.add(new ShowCircuit(reporter));
+        this.add(new BuildNestedOperators(compiler, graph2.getGraphs()));
+        this.add(new ValidateRecursiveOperators(compiler));
+        // this.add(new ShowCircuit(compiler));
     }
 
     /** Check that all operators in recursive components are supported */
     static class ValidateRecursiveOperators extends CircuitVisitor {
-        public ValidateRecursiveOperators(IErrorReporter errorReporter) {
-            super(errorReporter);
+        public ValidateRecursiveOperators(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         boolean inRecursive() {
@@ -161,8 +161,8 @@ public class RecursiveComponents extends Passes {
         @Nullable
         SCC<DBSPOperator> scc = null;
 
-        FixupViewReferences(IErrorReporter reporter, CircuitGraphs graphs) {
-            super(reporter, false);
+        FixupViewReferences(DBSPCompiler compiler, CircuitGraphs graphs) {
+            super(compiler, false);
             this.graphs = graphs;
         }
 
@@ -190,7 +190,7 @@ public class RecursiveComponents extends Passes {
                     DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
                     if (simple.is(DBSPViewDeclarationOperator.class) && operators.size() == 1) {
                         DBSPViewDeclarationOperator decl = simple.to(DBSPViewDeclarationOperator.class);
-                        this.errorReporter.reportWarning(simple.getSourcePosition(), "View is not recursive",
+                        this.compiler.reportWarning(simple.getSourcePosition(), "View is not recursive",
                                 "View " + Utilities.singleQuote(decl.originalViewName()) + " is declared" +
                                 " recursive, but is not used in any recursive computation");
                     }
@@ -271,8 +271,8 @@ public class RecursiveComponents extends Passes {
         /** Maps each view in an SCC to its output. */
         final Map<String, OutputPort> viewPort;
 
-        BuildNestedOperators(IErrorReporter reporter, CircuitGraphs graphs) {
-            super(reporter, graphs, false);
+        BuildNestedOperators(DBSPCompiler compiler, CircuitGraphs graphs) {
+            super(compiler, graphs, false);
             this.components = new HashMap<>();
             this.toAdd = new HashSet<>();
             this.viewPort = new HashMap<>();

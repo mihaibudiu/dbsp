@@ -33,7 +33,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
@@ -61,7 +60,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
@@ -144,9 +143,9 @@ public class ToRustVisitor extends CircuitVisitor {
      * }
      */
 
-    public ToRustVisitor(IErrorReporter reporter, IndentStream builder,
+    public ToRustVisitor(DBSPCompiler compiler, IndentStream builder,
                          CompilerOptions options, ProgramMetadata metadata) {
-        super(reporter);
+        super(compiler);
         this.options = options;
         this.builder = builder;
         this.useHandles = this.options.ioOptions.emitHandles;
@@ -158,7 +157,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     ToRustInnerVisitor createInnerVisitor(IndentStream builder) {
-        return new ToRustInnerVisitor(this.errorReporter, builder, options, false);
+        return new ToRustInnerVisitor(this.compiler(), builder, options, false);
     }
 
     void generateInto(DBSPType type) {
@@ -182,7 +181,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
-        EliminateStructs es = new EliminateStructs(this.errorReporter);
+        EliminateStructs es = new EliminateStructs(this.compiler());
         DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
         this.builder.append("impl From<")
                 .append(type.sanitizedName)
@@ -720,33 +719,6 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPControlledFilterOperator operator) {
-        DBSPType streamType = new DBSPTypeStream(operator.outputType);
-        this.writeComments(operator)
-                .append("let ")
-                .append(operator.getOutputName())
-                .append(": ");
-        streamType.accept(this.innerVisitor);
-        this.builder.append(" = ")
-                .append(operator.left().getOutputName());
-
-        boolean isZset = operator.getType().is(DBSPTypeZSet.class);
-        this.builder.append(".apply2(&")
-                .append(operator.right().getOutputName())
-                .append(", ");
-        this.builder.append("|d, c| ");
-        if (isZset)
-            this.builder.append("zset_");
-        else
-            this.builder.append("indexed_zset_");
-        this.builder.append("filter_comparator(d, c, ");
-        operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(")");
-        this.builder.append(");");
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPControlledKeyFilterOperator operator) {
         this.builder.append("let (")
                 .append(operator.getOutputName(0))
@@ -883,8 +855,8 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
-        FindComparators compFinder = new FindComparators(this.errorReporter);
-        FindStatics staticsFinder = new FindStatics(this.errorReporter);
+        FindComparators compFinder = new FindComparators(this.compiler);
+        FindStatics staticsFinder = new FindStatics(this.compiler);
         if (operator.function != null) {
             compFinder.apply(operator.getFunction());
             staticsFinder.apply(operator.getFunction());
@@ -1395,8 +1367,8 @@ public class ToRustVisitor extends CircuitVisitor {
     static class FindComparators extends InnerVisitor {
         final List<DBSPComparatorExpression> found = new ArrayList<>();
 
-        public FindComparators(IErrorReporter reporter) {
-            super(reporter);
+        public FindComparators(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         public void postorder(DBSPCustomOrdExpression expression) {
@@ -1408,8 +1380,8 @@ public class ToRustVisitor extends CircuitVisitor {
     static class FindStatics extends InnerVisitor {
         List<DBSPStaticExpression> found = new ArrayList<>();
 
-        public FindStatics(IErrorReporter reporter) {
-            super(reporter);
+        public FindStatics(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         public void postorder(DBSPStaticExpression expression) {
@@ -1449,10 +1421,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.constantLike(operator);
     }
 
-    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, CompilerOptions options) {
+    public static String toRustString(DBSPCompiler compiler, DBSPCircuit node, CompilerOptions options) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, options, node.getMetadata());
+        ToRustVisitor visitor = new ToRustVisitor(compiler, stream, options, node.getMetadata());
         visitor.apply(node);
         return builder.toString();
     }

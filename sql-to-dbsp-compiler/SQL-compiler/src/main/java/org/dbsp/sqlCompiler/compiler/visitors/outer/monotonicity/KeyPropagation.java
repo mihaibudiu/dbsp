@@ -18,7 +18,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -186,8 +186,8 @@ public class KeyPropagation extends CircuitVisitor {
     /** Maps each join that operates on a primary/foreign key to its description */
     public final Map<DBSPSimpleOperator, JoinDescription> joins;
 
-    public KeyPropagation(IErrorReporter errorReporter) {
-        super(errorReporter);
+    public KeyPropagation(DBSPCompiler compiler) {
+        super(compiler);
         this.keys = new HashMap<>();
         this.joins = new HashMap<>();
     }
@@ -199,7 +199,7 @@ public class KeyPropagation extends CircuitVisitor {
             return;
         }
 
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler(), true);
         projection.apply(node.getFunction());
         if (!projection.hasIoMap()) {
             super.postorder(node);
@@ -298,7 +298,7 @@ public class KeyPropagation extends CircuitVisitor {
 
         // In addition, the foreign key information is propagated through joins
         // (but not the primary key information).
-        Projection projection = new Projection(this.errorReporter, true);
+        Projection projection = new Projection(this.compiler(), true);
         projection.apply(operator.getFunction());
         if (projection.hasIoMap()) {
             Projection.IOMap ioMap = projection.getIoMap();

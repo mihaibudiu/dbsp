@@ -399,7 +399,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
-        DBSPSinkOperator sink = circuit.getSink(compiler.canonicalName("V"));
+        DBSPSinkOperator sink = circuit.getSink(compiler, "V");
         Assert.assertNotNull(sink);
         OutputPort op = sink.input();
         // There is no optimization I can imagine which will remove the distinct
@@ -586,7 +586,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Change change = ccs.toChange("""
                 INSERT INTO T VALUES(1, 'x');
                 REMOVE FROM T VALUES(2, 'Y');
-                REMOVE FROM T VALUES(3, 'Z');""").simplify();
+                REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         DBSPZSetLiteral expected = DBSPZSetLiteral.emptyWithElementType(
                 new DBSPTypeTuple(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),

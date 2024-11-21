@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -34,8 +34,8 @@ import java.util.List;
 public class ExpandCasts extends InnerRewriteVisitor {
     // This pass may be iterated many times, depending on the complexity of the expressions involved.
     // Expanding some casts generates other casts.
-    public ExpandCasts(IErrorReporter reporter) {
-        super(reporter);
+    public ExpandCasts(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     void unsupported(DBSPExpression source, DBSPType type) {
@@ -66,6 +66,8 @@ public class ExpandCasts extends InnerRewriteVisitor {
                 keys.add(new DBSPStringLiteral(fieldName));
 
                 DBSPExpression field = source.field(i).simplify();
+                if (field.getType().is(DBSPTypeBaseType.class))
+                    field = field.applyCloneIfNeeded();
                 DBSPExpression rec = field.cast(new DBSPTypeVariant(false));
                 values.add(rec);
             }
@@ -84,7 +86,7 @@ public class ExpandCasts extends InnerRewriteVisitor {
                     .closure(var);
             expression = new DBSPBinaryExpression(source.getNode(),
                     new DBSPTypeVec(new DBSPTypeVariant(false), vecType.mayBeNull),
-                    DBSPOpcode.ARRAY_CONVERT, source, converter);
+                    DBSPOpcode.ARRAY_CONVERT, source.borrow(), converter);
         } else {
             return null;
         }

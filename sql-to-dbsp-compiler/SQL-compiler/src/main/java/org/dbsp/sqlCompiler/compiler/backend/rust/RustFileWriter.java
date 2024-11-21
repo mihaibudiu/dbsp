@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -53,8 +53,8 @@ public class RustFileWriter {
     /** Visitor which discovers some data structures used.
      * Stores the result in the "used" structure. */
     class FindResources extends InnerVisitor {
-        public FindResources(IErrorReporter reporter) {
-            super(reporter);
+        public FindResources(DBSPCompiler compiler) {
+            super(compiler);
         }
 
         @Override

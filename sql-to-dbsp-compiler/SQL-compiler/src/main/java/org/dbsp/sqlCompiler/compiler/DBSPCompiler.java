@@ -179,6 +179,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     // Keep the following in sync with the start() method below
     public static final String NOW_TABLE_NAME = "now";
     public static final String ERROR_TABLE_NAME = "ERROR_TABLE";
+    public static final String ERROR_VIEW_NAME = "ERROR_VIEW";
 
     // Steps executed before the actual compilation.
     void start() {
@@ -186,7 +187,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.compileInternal(
                 """
                 CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-                CREATE TABLE ERROR_TABLE(table_or_view VARCHAR, message VARCHAR, metadata VARIANT);""",
+                CREATE TABLE ERROR_TABLE(table_or_view VARCHAR, message VARCHAR, metadata VARIANT NOT NULL);
+                CREATE VIEW ERROR_VIEW AS SELECT * FROM ERROR_TABLE;
+                """,
                 true, false);
     }
 

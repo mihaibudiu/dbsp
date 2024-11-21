@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -155,8 +156,8 @@ public final class DBSPCircuit extends DBSPNode
     /** Get the external view with the specified name.
      * @param viewName must use the proper casing */
     @Nullable
-    public DBSPSinkOperator getSink(String viewName) {
-        return this.sinkOperators.get(viewName);
+    public DBSPSinkOperator getSink(ICompilerComponent component, String viewName) {
+        return this.sinkOperators.get(component.compiler().canonicalName(viewName));
     }
 
     @Override

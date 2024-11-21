@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
@@ -11,7 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -27,8 +29,8 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     // A higher value -> more details
     protected final int details;
 
-    public ToDotNodesVisitor(IErrorReporter reporter, IndentStream stream, int details) {
-        super(reporter);
+    public ToDotNodesVisitor(DBSPCompiler compiler, IndentStream stream, int details) {
+        super(compiler);
         this.stream = stream;
         this.details = details;
     }
@@ -37,7 +39,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return operator.isMultiset ? "" : "*";
     }
 
-    static String annotations(DBSPSimpleOperator operator) {
+    static String annotations(DBSPOperator operator) {
         return operator.annotations.toDotString();
     }
 
@@ -88,7 +90,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     String convertFunction(DBSPExpression expression) {
         String result = ToRustInnerVisitor.toRustString(
-                this.errorReporter, expression, CompilerOptions.getDefault(), true);
+                this.compiler(), expression, CompilerOptions.getDefault(), true);
         result = result.replace("\n", "\\l");
         return Utilities.escapeDoubleQuotes(result);
     }
@@ -98,13 +100,13 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
             if (aggregate.aggregate != null) {
-                expression = aggregate.aggregate.compact(this.errorReporter);
+                expression = aggregate.aggregate.compact(this.compiler());
             }
         } else if (node.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)) {
             DBSPPartitionedRollingAggregateWithWaterlineOperator aggregate =
                     node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregate != null) {
-                expression = aggregate.aggregate.compact(this.errorReporter);
+                expression = aggregate.aggregate.compact(this.compiler());
             }
         }
         if (expression == null)
@@ -116,7 +118,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         }
         if (node.is(DBSPJoinFilterMapOperator.class)) {
             expression = LowerCircuitVisitor.lowerJoinFilterMapFunctions(
-                    this.errorReporter,
+                    this.compiler(),
                     node.to(DBSPJoinFilterMapOperator.class));
         }
         return this.convertFunction(expression);
@@ -190,6 +192,28 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     @Override
     public void postorder(DBSPNestedOperator node) {
         this.stream.decrease().append("}").newline();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPOperatorWithError node) {
+        this.stream.append(node.getOutputName(0))
+                .append(" [ shape=box")
+                .append(" label=\"")
+                .append(node.getIdString())
+                .append(annotations(node))
+                .append(" ")
+                .append(shorten(node.operation));
+        if (this.details > 3) {
+            this.stream
+                    .append("(")
+                    .append(this.convertFunction(node.function))
+                    .append(", ")
+                    .append(this.convertFunction(node.error))
+                    .append(")\\l");
+        }
+        this.stream.append("\" ]")
+                .newline();
+        return VisitDecision.STOP;
     }
 
     @Override

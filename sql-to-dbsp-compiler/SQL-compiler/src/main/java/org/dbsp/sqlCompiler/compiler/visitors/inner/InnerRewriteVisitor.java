@@ -1,7 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
@@ -127,8 +128,8 @@ import java.util.function.Predicate;
 public abstract class InnerRewriteVisitor
         extends InnerVisitor
         implements IWritesLogs {
-    protected InnerRewriteVisitor(IErrorReporter reporter) {
-        super(reporter);
+    protected InnerRewriteVisitor(DBSPCompiler compiler) {
+        super(compiler);
     }
 
     /** Result produced by the last preorder invocation. */
@@ -1307,11 +1308,11 @@ public abstract class InnerRewriteVisitor
     /** Given a visitor for inner nodes returns a visitor
      * that optimizes an entire circuit. */
     public CircuitRewriter circuitRewriter() {
-        return new CircuitRewriter(this.errorReporter, this);
+        return new CircuitRewriter(this.compiler, this);
     }
 
     /** Create a circuit rewriter with a predicate that selects which node to optimize */
     public CircuitRewriter circuitRewriter(Predicate<DBSPOperator> toOptimize) {
-        return new CircuitRewriter(this.errorReporter, this, toOptimize);
+        return new CircuitRewriter(this.compiler, this, toOptimize);
     }
 }

@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Logger;
 
 /** Remove a specified input table */
@@ -10,8 +10,8 @@ public class RemoveTable extends CircuitCloneVisitor {
     final ICompilerComponent compiler;
     final String tableName;
 
-    RemoveTable(String tableName, IErrorReporter errorReporter, ICompilerComponent compiler) {
-        super(errorReporter, false);
+    RemoveTable(String tableName, DBSPCompiler compiler) {
+        super(compiler, false);
         this.compiler = compiler;
         this.tableName = tableName;
     }

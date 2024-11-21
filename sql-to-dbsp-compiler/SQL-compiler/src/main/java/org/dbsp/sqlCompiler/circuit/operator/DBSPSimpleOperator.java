@@ -83,16 +83,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator implements IHasTyp
         return "stream" + this.getId();
     }
 
-    public String getIdString() {
-        String name = CompactName.getCompactName(this);
-        if (name != null)
-            return name;
-        String result = Long.toString(this.id);
-        if (this.derivedFrom >= 0)
-            result += "(" + this.derivedFrom + ")";
-        return result;
-    }
-
     public DBSPSimpleOperator(CalciteObject node, String operation,
                               @Nullable DBSPExpression function,
                               DBSPType outputType, boolean isMultiset) {

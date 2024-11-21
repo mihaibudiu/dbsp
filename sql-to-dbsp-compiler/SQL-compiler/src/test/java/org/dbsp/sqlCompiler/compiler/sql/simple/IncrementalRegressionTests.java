@@ -91,7 +91,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 where x = 5 and ts > now();""";
         var ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
 
             @Override
@@ -139,7 +139,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 GROUP BY lts;""";
         var ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
 
@@ -325,7 +325,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 select SUM(5) from v group by ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
-        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int integrateTraceKeys = 0;
             int integrateTraceValues = 0;
 
@@ -345,7 +345,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(2, this.integrateTraceValues);
             }
         };
-        InnerVisitor findBoolCasts = new InnerVisitor(new StderrErrorReporter()) {
+        InnerVisitor findBoolCasts = new InnerVisitor(ccs.compiler) {
             int unsafeBoolCasts = 0;
 
             @Override
