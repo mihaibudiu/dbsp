@@ -45,6 +45,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,12 @@ public class Utilities {
         if (previous != null)
             throw new RuntimeException("Key " + key + " already mapped to " + previous + " when adding " + value);
         return value;
+    }
+
+    public static BitSet bitSet(long bits) {
+        long[] values = new long[1];
+        values[0] = bits;
+        return BitSet.valueOf(values);
     }
 
     public static void showResultSet(ResultSet result, PrintStream out)

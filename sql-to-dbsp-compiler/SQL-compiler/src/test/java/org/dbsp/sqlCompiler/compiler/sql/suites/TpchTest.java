@@ -13,9 +13,6 @@ public class TpchTest extends BaseSQLTests {
     @Test
     public void compileTpch() throws IOException {
         String tpch = TestUtil.readStringFromResourceFile("tpch.sql");
-        // The following convert every view except 21 into a local view
-        //tpch = tpch.replace("create view q", "create local view q");
-        //tpch = tpch.replace("create local view q21", "create view q21");
         CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
@@ -23,5 +20,18 @@ public class TpchTest extends BaseSQLTests {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void compileTpch5() throws IOException {
+        String tpch = TestUtil.readStringFromResourceFile("tpch.sql");
+        tpch = tpch.replace("create view q", "create local view q");
+        tpch = tpch.replace("create local view q5", "create view q5");
+        CompilerOptions options = this.testOptions(true, true);
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        options.languageOptions.ignoreOrderBy = true;
+        compiler.compileStatements(tpch);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.showErrors();
     }
 }

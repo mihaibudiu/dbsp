@@ -1,43 +1,33 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FieldMap;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.FindUnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.ParameterFieldRemap;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.RewriteFields;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
-import javax.annotation.Nullable;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 
 /** Find and remove unused fields in Join operators. */
 public class NarrowJoins extends Repeat {
@@ -56,91 +46,18 @@ public class NarrowJoins extends Repeat {
         }
     }
 
-    /** Rewrite variable and field accesses */
-    static class RewriteFields extends InnerRewriteVisitor {
-        final Substitution<DBSPParameter, DBSPParameter> newParam;
-        // Maps original parameters to their remap tables
-        // param.X is remapped to newParam.Y, where newParam is given
-        // by the 'newParam' table, and Y is given by fieldRemap[param][X]
-        final Map<DBSPParameter, Map<Integer, Integer>> fieldRemap;
-        @Nullable
-        ReferenceMap refMap;
-
-        protected RewriteFields(DBSPCompiler compiler,
-                                Substitution<DBSPParameter, DBSPParameter> newParam,
-                                Map<DBSPParameter, Map<Integer, Integer>> fieldRemap) {
-            super(compiler);
-            this.fieldRemap = fieldRemap;
-            this.newParam = newParam;
-        }
-
-        @Override
-        public VisitDecision preorder(DBSPParameter param) {
-            DBSPParameter replacement = this.newParam.get(param);
-            this.map(param, replacement);
-            return VisitDecision.STOP;
-        }
-
-        @Override
-        public VisitDecision preorder(DBSPVariablePath var) {
-            assert this.refMap != null;
-            IDBSPDeclaration declaration = this.refMap.getDeclaration(var);
-            if (declaration.is(DBSPParameter.class)) {
-                DBSPParameter replacement = this.newParam.get(declaration.to(DBSPParameter.class));
-                this.map(var, replacement.asVariable());
-                return VisitDecision.STOP;
-            }
-            return super.preorder(var);
-        }
-
-        @Override
-        public VisitDecision preorder(DBSPFieldExpression expression) {
-            // Check for a pattern of the form (*param).x
-            // to rewrite them as (*newParam).y
-            assert this.refMap != null;
-            int field = expression.fieldNo;
-            if (expression.expression.is(DBSPDerefExpression.class)) {
-                DBSPDerefExpression deref = expression.expression.to(DBSPDerefExpression.class);
-                if (deref.expression.is(DBSPVariablePath.class)) {
-                    DBSPVariablePath var = deref.expression.to(DBSPVariablePath.class);
-                    IDBSPDeclaration declaration = this.refMap.getDeclaration(var);
-                    if (declaration.is(DBSPParameter.class)) {
-                        Map<Integer, Integer> remap = this.fieldRemap.get(declaration.to(DBSPParameter.class));
-                        if (remap != null) {
-                            field = Utilities.getExists(remap, field);
-                        }
-                    }
-                    this.push(expression);
-                    DBSPExpression source = this.transform(expression.expression);
-                    this.pop(expression);
-                    this.map(expression, source.field(field));
-                    return VisitDecision.STOP;
-                }
-            }
-            return super.preorder(expression);
-        }
-
-        @Override
-        public void startVisit(IDBSPInnerNode node) {
-            ResolveReferences resolve = new ResolveReferences(this.compiler, false);
-            this.refMap = resolve.reference;
-            resolve.apply(node);
-            super.startVisit(node);
-        }
-    }
-
     static class RemoveJoinFields extends CircuitCloneVisitor {
         RemoveJoinFields(DBSPCompiler compiler) {
             super(compiler, false);
         }
 
-        DBSPMapIndexOperator getProjection(CalciteObject node, List<Integer> fields, OutputPort input) {
+        DBSPMapIndexOperator getProjection(CalciteObject node, FieldMap fieldMap, OutputPort input) {
             DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
             DBSPVariablePath var = inputType.var();
-            List<DBSPExpression> resultFields = Linq.map(fields,
-                    f -> var.deepCopy().field(1).deref().field(f).applyCloneIfNeeded());
+            List<DBSPExpression> resultFields = Linq.map(fieldMap.getUsedFields(),
+                    f -> var.field(1).deref().field(f).applyCloneIfNeeded());
             DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
-                    DBSPTupleExpression.flatten(var.deepCopy().field(0).deref()),
+                    DBSPTupleExpression.flatten(var.field(0).deref()),
                     new DBSPTupleExpression(resultFields, false));
             DBSPClosureExpression projection = raw.closure(var);
 
@@ -152,50 +69,28 @@ public class NarrowJoins extends Repeat {
         }
 
         boolean processJoin(DBSPJoinBaseOperator join) {
-            Projection projection = new Projection(this.compiler(), true);
-            projection.apply(join.getFunction());
-            if (!projection.hasIoMap()) return false;
+            FindUnusedFields fu = new FindUnusedFields(this.compiler);
             DBSPClosureExpression joinFunction = join.getClosureFunction();
-            int leftSize = joinFunction.parameters[1].getType().deref().to(DBSPTypeTupleBase.class).size();
-            int rightSize = joinFunction.parameters[2].getType().deref().to(DBSPTypeTupleBase.class).size();
-
-            // Create a projection map for each input which has unused fields
-            Projection.IOMap outputMap = projection.getIoMap();
-            List<Integer> leftInputs = outputMap.getFieldsOfInput(1);
-            List<Integer> rightInputs = outputMap.getFieldsOfInput(2);
-            // If all the fields are used there is no point in optimizing this
-            if (leftInputs.size() == leftSize && rightInputs.size() == rightSize)
-                return false;
-            DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftInputs, join.left());
-            DBSPSimpleOperator rightMap = getProjection(join.getNode(), rightInputs, join.right());
-
-            Map<Integer, Integer> leftRemap = new HashMap<>();
-            for (int i = 0; i < leftInputs.size(); i++)
-                // This "compresses" the indexes in the join function, omitting the ones
-                // that are no longer present in the inputs
-                leftRemap.put(leftInputs.get(i), i);
-            Map<Integer, Integer> rightRemap = new HashMap<>();
-            for (int i = 0; i < rightInputs.size(); i++)
-                rightRemap.put(rightInputs.get(i), i);
+            fu.apply(joinFunction);
 
             assert joinFunction.parameters.length == 3;
-            Substitution<DBSPParameter, DBSPParameter> subst = new Substitution<>();
-            subst.substituteNew(
-                    joinFunction.parameters[0],
-                    join.left().getOutputIndexedZSetType().keyType.ref().var().asParameter());
-            subst.substitute(
-                    joinFunction.parameters[1],
-                    leftMap.getOutputIndexedZSetType().elementType.ref().var().asParameter());
-            subst.substitute(
-                    joinFunction.parameters[2],
-                    rightMap.getOutputIndexedZSetType().elementType.ref().var().asParameter());
+            DBSPParameter left = joinFunction.parameters[1];
+            DBSPParameter right = joinFunction.parameters[2];
 
-            Map<DBSPParameter, Map<Integer, Integer>> remap = new HashMap<>();
-            Utilities.putNew(remap, joinFunction.parameters[1], leftRemap);
-            Utilities.putNew(remap, joinFunction.parameters[2], rightRemap);
+            var pair = fu.getFieldRemap();
+            ParameterFieldRemap remap = pair.left;
+            FieldMap leftRemap = Objects.requireNonNull(remap.get(left));
+            FieldMap rightRemap = Objects.requireNonNull(remap.get(right));
+            if (!leftRemap.hasUnusedFields() && !rightRemap.hasUnusedFields())
+                return false;
 
-            RewriteFields rw = new RewriteFields(this.compiler(), subst, remap);
-            DBSPExpression newJoinFunction = rw.apply(join.getFunction()).to(DBSPExpression.class);
+            DBSPSimpleOperator leftMap = getProjection(join.getNode(), leftRemap, join.left());
+            DBSPSimpleOperator rightMap = getProjection(join.getNode(), rightRemap, join.right());
+
+            RewriteFields rw = pair.right;
+            // Parameter 0 is not used in the body of the function, leave it unchanged
+            rw.changeToIdentity(joinFunction.parameters[0]);
+            DBSPExpression newJoinFunction = rw.apply(joinFunction).to(DBSPExpression.class);
             DBSPSimpleOperator replacement = join.withFunction(newJoinFunction, join.outputType)
                     .withInputs(Linq.list(leftMap.outputPort(), rightMap.outputPort()), true);
             this.map(join, replacement);

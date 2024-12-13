@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.DagToTree;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -137,7 +138,7 @@ public class ImplementNow extends Passes {
         ReferenceMap refMap;
 
         public RewriteNowClosure(DBSPCompiler compiler) {
-            super(compiler);
+            super(compiler, false);
             this.nowReplacement = null;
             this.parameterReplacement = null;
             this.refMap = null;
@@ -194,7 +195,7 @@ public class ImplementNow extends Passes {
         final DBSPExpression replacement;
 
         public RewriteNowExpression(DBSPCompiler compiler, DBSPExpression replacement) {
-            super(compiler);
+            super(compiler, false);
             this.replacement = replacement;
         }
 
@@ -770,6 +771,8 @@ public class ImplementNow extends Passes {
             Simplify simplify = new Simplify(this.compiler());
             DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
             closure = simplify.apply(closure).to(DBSPClosureExpression.class);
+            DagToTree dt = new DagToTree(this.compiler());
+            closure = dt.apply(closure).to(DBSPClosureExpression.class);
             List<BooleanExpression> filters = this.findTemporalFilters(operator, closure);
             filters = combineExpressions(filters);
             assert !filters.isEmpty();

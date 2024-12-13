@@ -186,7 +186,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         int index = inputRef.getIndex();
         if (index < type.size()) {
-            DBSPExpression field = this.inputRow.deepCopy().deref().field(index);
+            DBSPExpression field = this.inputRow.deref().field(index);
             return field.applyCloneIfNeeded();
         }
         if (index - type.size() < this.constants.size())
@@ -199,7 +199,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         CalciteObject node = CalciteObject.create(this.context, correlVariable);
         if (this.inputRow == null)
             throw new InternalCompilerError("Correlation variable referenced without a row context", node);
-        return this.inputRow.deref().deepCopy();
+        return this.inputRow.deref();
     }
 
     @Override
