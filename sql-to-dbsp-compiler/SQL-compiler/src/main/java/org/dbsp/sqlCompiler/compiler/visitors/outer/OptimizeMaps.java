@@ -14,10 +14,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -25,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Maybe;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,7 +62,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             // mapindex(map) = mapindex
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, false);
+                    .applyAfter(this.compiler(), expression, Maybe.MAYBE);
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
             this.map(operator, result);
@@ -120,7 +124,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             // apply(apply) = apply
             DBSPClosureExpression expression = apply.getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, true);
+                    .applyAfter(this.compiler(), expression, Maybe.YES);
             DBSPSimpleOperator result = new DBSPApplyOperator(
                     operator.getNode(), newFunction, operator.outputType,
                     apply.inputs.get(0), apply.comment);
@@ -143,7 +147,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 DBSPExpression newMap = operator.getFunction();
                 if (jfm.map != null) {
                     newMap = operator.getClosureFunction()
-                            .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), true);
+                            .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), Maybe.YES);
                 }
                 DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
                         jfm.getNode(), operator.getOutputZSetType(), jfm.getFunction(),
@@ -174,7 +178,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
         } else if (source.node().is(DBSPMapOperator.class) && inputFanout == 1) {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, false);
+                    .applyAfter(this.compiler(), expression, Maybe.MAYBE);
             DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
             this.map(operator, result);
             return;
@@ -182,7 +186,9 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 source.node().is(DBSPDifferentiateOperator.class) ||
                 source.node().is(DBSPDelayOperator.class) ||
                 source.node().is(DBSPNegateOperator.class) ||
-                // source.is(DBSPSumOperator.class) ||  // swapping with sum is not sound
+                (source.node().is(DBSPSumOperator.class) && projection.isProjection) ||
+                (source.node().is(DBSPSubtractOperator.class) && projection.isProjection) ||
+                // swapping arbitrary maps with sum is not sound
                 // since it may apply operations like div by 0 to tuples that may never appear
                 source.node().is(DBSPNoopOperator.class)) {
             // For all such operators we can swap them with the map

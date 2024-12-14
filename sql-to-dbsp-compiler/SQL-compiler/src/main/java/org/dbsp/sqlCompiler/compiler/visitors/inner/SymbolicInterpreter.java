@@ -53,9 +53,9 @@ public class SymbolicInterpreter<T> extends TranslateVisitor<T> {
 
     @Override
     public void startVisit(IDBSPInnerNode node) {
+        super.startVisit(node);
         this.currentValue.clear();
         this.currentValue.newContext();
-        super.startVisit(node);
     }
 
     @Override

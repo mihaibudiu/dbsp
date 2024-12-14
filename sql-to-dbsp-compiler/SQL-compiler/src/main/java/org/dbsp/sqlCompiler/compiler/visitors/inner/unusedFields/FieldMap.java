@@ -30,6 +30,10 @@ public class FieldMap {
         return this.size > this.fieldMap.size();
     }
 
+    public boolean isEmpty() {
+        return this.fieldMap.isEmpty();
+    }
+
     public FieldMap(DBSPType parameterType, BitSet bits) {
         this.parameterType = parameterType;
         this.fieldMap = new HashMap<>();

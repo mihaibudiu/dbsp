@@ -980,9 +980,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPLetExpression expression) {
-        this.builder.increase()
-                .append("{")
-                .newline()
+        this.builder.append("{")
+                .increase()
                 .append("let ")
                 .append(expression.variable.variable)
                 .append(" = ");

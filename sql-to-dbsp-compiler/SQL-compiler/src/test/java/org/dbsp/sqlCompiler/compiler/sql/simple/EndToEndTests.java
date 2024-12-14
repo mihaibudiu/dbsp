@@ -19,8 +19,6 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- *
- *
  */
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
@@ -526,7 +524,6 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void joinTest() {
-        this.showFinal();
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL1";
         this.testQuery(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral(false)),
@@ -842,7 +839,6 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void linearNonLinearTest() {
-        this.showFinal();
         String query = "SELECT MAX(T.COL1), SUM(T.COL1) FROM T";
         this.testAggregate(query,
                 new DBSPZSetLiteral(

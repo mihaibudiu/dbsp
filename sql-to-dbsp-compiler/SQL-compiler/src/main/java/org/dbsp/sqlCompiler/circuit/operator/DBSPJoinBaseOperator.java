@@ -5,11 +5,13 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
+import javax.annotation.Nullable;
+
 /** Base class for the many kinds of joins we have, some incremental,
  * some non-incremental. */
 public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator {
     protected DBSPJoinBaseOperator(
-            CalciteObject node, String operation, DBSPExpression function,
+            CalciteObject node, String operation, @Nullable DBSPExpression function,
             DBSPType outputType, boolean isMultiset,
             OutputPort left, OutputPort right) {
         super(node, operation, function, outputType, isMultiset, left, right);

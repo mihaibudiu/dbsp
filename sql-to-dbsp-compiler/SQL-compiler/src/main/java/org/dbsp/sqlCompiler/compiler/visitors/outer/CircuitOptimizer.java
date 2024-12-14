@@ -31,13 +31,11 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.DagToTree;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 
@@ -74,7 +72,6 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(compiler));
-        passes.add(new DagToTree(compiler).circuitRewriter(false));
         passes.add(new UnusedFields(compiler));
         passes.add(new MinMaxOptimize(compiler, compiler.weightVar));
         passes.add(new ExpandAggregateZero(compiler));
@@ -100,8 +97,6 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
 
         // The circuit is complete here, start optimizing for real.
-        passes.add(ToDot.dumper(compiler, "x.png", 4));
-        passes.add(new NarrowJoins(compiler));
         // Doing this after the monotone analysis only
         if (!options.ioOptions.emitHandles)
             passes.add(new IndexedInputs(compiler));

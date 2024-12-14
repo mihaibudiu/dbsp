@@ -375,6 +375,27 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testOuterDuplicate() {
+        // Validated on Postgres
+        String sql = """
+                CREATE TABLE t1(x int, y int);
+                CREATE TABLE t2(z int, w int);
+                CREATE VIEW W AS SELECT * FROM t1 LEFT JOIN t2 on x = z;""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        ccs.step("""
+                INSERT INTO t1 VALUES(1, 0), (1, 0), (2, 0), (3, 0);
+                INSERT INTO t2 VALUES(1, 1), (2, 2);
+                """,
+                """
+                  x | y | z | w | weight
+                --------------------------
+                  1 | 0 | 1 | 1 | 2
+                  2 | 0 | 2 | 2 | 1
+                  3 | 0 |   |   | 1""");
+    }
+
+    @Test
     public void issue2641() {
         String sql = """
                 create table t (

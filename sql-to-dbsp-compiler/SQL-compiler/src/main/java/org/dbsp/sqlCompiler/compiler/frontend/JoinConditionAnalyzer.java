@@ -50,13 +50,15 @@ public class JoinConditionAnalyzer implements IWritesLogs {
      * between two columns in the two tables.
      * @param leftColumn  Column from the left relation that is compared for equality
      * @param rightColumn Column from the right relation that is compared for equality
-     * @param commonType  Type that columns have to be cast to
+     * @param commonType  Type that columns have to be cast to in the join
+     * @param mostGeneralType Most general type of the columns
      * @param nonNull     If true the columns cannot be null */
-    record EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
-        EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
+    record EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, DBSPType mostGeneralType, boolean nonNull) {
+        EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, DBSPType mostGeneralType, boolean nonNull) {
             this.leftColumn = leftColumn;
             this.rightColumn = rightColumn;
             this.commonType = commonType;
+            this.mostGeneralType = mostGeneralType;
             this.nonNull = nonNull;
             if (leftColumn < 0 || rightColumn < 0)
                 throw new InternalCompilerError("Illegal column number " +
@@ -64,7 +66,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         }
 
         public EqualityTest withType(DBSPType type) {
-            return new EqualityTest(this.leftColumn, this.rightColumn, type, this.nonNull);
+            return new EqualityTest(this.leftColumn, this.rightColumn, type, this.mostGeneralType, this.nonNull);
         }
     }
 
@@ -87,12 +89,12 @@ public class JoinConditionAnalyzer implements IWritesLogs {
             this.leftOver = leftOver;
         }
 
-        public void addEquality(RexNode left, RexNode right, DBSPType commonType, boolean nonNull) {
+        public void addEquality(RexNode left, RexNode right, DBSPType commonType, DBSPType mostGeneralType, boolean nonNull) {
             RexInputRef ref = Objects.requireNonNull(asInputRef(left));
             int l = ref.getIndex();
             ref = Objects.requireNonNull(asInputRef(right));
             int r = ref.getIndex() - JoinConditionAnalyzer.this.leftTableColumnCount;
-            this.comparisons.add(new EqualityTest(l, r, commonType, nonNull));
+            this.comparisons.add(new EqualityTest(l, r, commonType, mostGeneralType, nonNull));
         }
 
         void validate() {
@@ -167,11 +169,16 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     mayBeNull = true;
                 }
             }
+            boolean mostGeneralMayBeNull = false;
+            if (leftType.mayBeNull || rightType.mayBeNull) {
+                mostGeneralMayBeNull = true;
+            }
             DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).withMayBeNull(mayBeNull);
+            DBSPType mostGeneralType = commonType.withMayBeNull(mostGeneralMayBeNull);
             if (leftIsLeft) {
-                this.addEquality(left, right, commonType, !mayBeNull);
+                this.addEquality(left, right, commonType, mostGeneralType, !mayBeNull);
             } else {
-                this.addEquality(right, left, commonType, !mayBeNull);
+                this.addEquality(right, left, commonType, mostGeneralType, !mayBeNull);
             }
             return true;
         }
@@ -187,8 +194,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
     /**
      * Returns 'true' if this expression is referencing a column in the left table.
      * @param node  A row expression.
-     * @return null if this does not refer to a table column.
-     */
+     * @return null if this does not refer to a table column. */
     @Nullable
     public Boolean isLeftTableColumnReference(RexNode node) {
         RexInputRef ref = asInputRef(node);

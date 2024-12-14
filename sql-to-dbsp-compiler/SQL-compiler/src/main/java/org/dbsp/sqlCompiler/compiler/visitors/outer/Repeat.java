@@ -31,6 +31,10 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
         int maxRepeats = Math.max(circuit.size(), 10);
         int repeats = 0;
         while (true) {
+            Logger.INSTANCE.belowLevel(this, 1)
+                    .append("Iteration ")
+                    .append(repeats)
+                    .newline();
             DBSPCircuit result = this.transform.apply(circuit);
             Logger.INSTANCE.belowLevel(this, 4)
                     .append("After ")
