@@ -4435,6 +4435,13 @@
           },
           {
             "type": "string",
+            "description": "SQL `UUID` type.",
+            "enum": [
+              "Uuid"
+            ]
+          },
+          {
+            "type": "string",
             "description": "SQL `VARIANT` type.",
             "enum": [
               "Variant"

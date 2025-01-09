@@ -616,6 +616,7 @@ mod test {
                 val_smallint SMALLINT,
                 val_integer INTEGER,
                 val_bigint BIGINT,
+                val_uuid UUID,
                 val_decimal_p_s DECIMAL(2, 1),
                 val_real REAL,
                 val_double DOUBLE,
@@ -656,7 +657,7 @@ mod test {
             assert!(relation.properties.is_empty());
             assert_eq!(relation.fields.len(), 21);
 
-            // BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT
+            // BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, UUID
             assert_eq!(
                 relation.field("val_boolean").unwrap().columntype.typ,
                 SqlType::Boolean
@@ -677,7 +678,10 @@ mod test {
                 relation.field("val_bigint").unwrap().columntype.typ,
                 SqlType::BigInt
             );
-
+            assert_eq!(
+                relation.field("val_uuid").unwrap().columntype.typ,
+                SqlType::Uuid
+            );
             // DECIMAL(p, s)
             let decimal_column_type = relation
                 .field("val_decimal_p_s")

@@ -4,7 +4,9 @@
 
 use std::cmp::Ordering;
 
-use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*, Weight};
+use crate::{
+    binary::ByteArray, geopoint::*, interval::*, timestamp::*, uuid::*, variant::*, Weight,
+};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use lazy_static::lazy_static;
@@ -1416,6 +1418,12 @@ pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
     limit_or_size_string(result, size, fixed)
 }
 
+#[doc(hidden)]
+pub fn cast_to_s_Uuid(value: Uuid, size: i32, fixed: bool) -> String {
+    let result: String = value.to_string();
+    limit_or_size_string(result, size, fixed)
+}
+
 cast_to_string!(b, bool);
 cast_to_string!(decimal, Decimal);
 cast_to_string!(f, F32);
@@ -1443,6 +1451,7 @@ cast_to_string!(ShortInterval_SECONDS, ShortInterval);
 cast_to_string!(ShortInterval_DAYS_TO_SECONDS, ShortInterval);
 cast_to_string!(ShortInterval_HOURS_TO_SECONDS, ShortInterval);
 cast_to_string!(ShortInterval_MINUTES_TO_SECONDS, ShortInterval);
+cast_to_string!(Uuid, Uuid);
 
 #[doc(hidden)]
 #[inline]
@@ -2603,6 +2612,31 @@ pub fn cast_to_bytesN_bytes(value: ByteArray, precision: i32) -> Option<ByteArra
     Some(ByteArray::with_size(value.as_slice(), precision))
 }
 
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_bytes_Uuid(value: Uuid, precision: i32) -> ByteArray {
+    ByteArray::with_size(value.to_bytes(), precision)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_bytesN_Uuid(value: Uuid, precision: i32) -> Option<ByteArray> {
+    Some(ByteArray::with_size(value.to_bytes(), precision))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_bytes_UuidN(value: Option<Uuid>, precision: i32) -> ByteArray {
+    ByteArray::with_size(value.unwrap().to_bytes(), precision)
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_bytesN_UuidN(value: Option<Uuid>, precision: i32) -> Option<ByteArray> {
+    let value = value?;
+    cast_to_bytesN_Uuid(value, precision)
+}
+
 ///////////////////// Cast to Variant
 
 // Synthesizes 6 functions for the argument type, e.g.:
@@ -2728,6 +2762,7 @@ cast_to_variant!(s, String, String); // The other direction takes extra argument
 cast_to_variant!(bytes, ByteArray, Binary); // The other direction takes extra arguments
 cast_variant!(Date, Date, Date);
 cast_variant!(Time, Time, Time);
+cast_variant!(Uuid, Uuid, Uuid);
 cast_variant!(Timestamp, Timestamp, Timestamp);
 cast_variant!(ShortInterval_DAYS, ShortInterval, ShortInterval);
 cast_variant!(ShortInterval_HOURS, ShortInterval, ShortInterval);
@@ -2888,3 +2923,23 @@ where
     let value = value?;
     cast_to_mapN_V(value)
 }
+
+#[doc(hidden)]
+pub fn cast_to_Uuid_s(value: String) -> Uuid {
+    Uuid::from_string(&value)
+}
+
+cast_function!(Uuid, Uuid, s, String);
+
+#[doc(hidden)]
+pub fn cast_to_Uuid_bytes(value: ByteArray) -> Uuid {
+    if value.length() < 16 {
+        panic!("Need at least 16 bytes in BINARY value to create an UUID");
+    } else {
+        let slice = value.as_slice();
+        let slice = unsafe { *(slice.as_ptr() as *const [u8; 16]) };
+        Uuid::from_bytes(slice)
+    }
+}
+
+cast_function!(Uuid, Uuid, bytes, ByteArray);
