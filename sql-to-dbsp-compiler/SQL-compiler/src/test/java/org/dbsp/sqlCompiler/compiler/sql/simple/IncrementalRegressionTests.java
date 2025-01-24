@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -20,11 +21,13 @@ import java.nio.file.Paths;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
-    @Test
+    @Test @Ignore
     public void t() throws IOException {
-        // this.showFinalVerbose(2);
+        // Logger.INSTANCE.setLoggingLevel(OptimizeMaps.class, 2);
+        this.showFinalVerbose(2);
         String sql = Utilities.readFile(Paths.get("/home/mbudiu/win/Downloads/procore_sql.txt"));
-        this.compileRustTestCase(sql);
+        this.getCCS(sql);
+        // this.compileRustTestCase(sql);
     }
 
     @Override
