@@ -23,16 +23,16 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
+import org.apache.calcite.config.NullCollation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeComparator;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 
 /** A base class representing a comparator used for sorting. */
 public abstract class DBSPComparatorExpression extends DBSPExpression {
-    protected DBSPComparatorExpression(CalciteObject node, DBSPTypeComparator type) {
+    protected DBSPComparatorExpression(CalciteObject node, DBSPComparatorType type) {
         super(node, type);
     }
 
@@ -45,18 +45,18 @@ public abstract class DBSPComparatorExpression extends DBSPExpression {
         visitor.postorder(this);
     }
 
-    public DBSPTypeComparator getComparatorType() {
-        return this.type.to(DBSPTypeComparator.class);
+    public DBSPComparatorType getComparatorType() {
+        return this.type.to(DBSPComparatorType.class);
     }
 
     /** Type of value that is being compared. */
     public abstract DBSPType comparedValueType();
 
-    public DBSPComparatorExpression field(int index, boolean ascending) {
-        return new DBSPFieldComparatorExpression(this.getNode(), this, index, ascending);
+    public DBSPComparatorExpression field(int index, boolean ascending, NullCollation nullCollation) {
+        return new DBSPFieldComparatorExpression(this.getNode(), this, index, ascending, nullCollation);
     }
 
     public String getComparatorStructName() {
-        return this.type.to(DBSPTypeComparator.class).name;
+        return this.type.to(DBSPComparatorType.class).name;
     }
 }

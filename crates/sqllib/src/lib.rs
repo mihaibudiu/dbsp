@@ -59,6 +59,8 @@ pub use string::SqlString;
 pub use timestamp::{Date, Time, Timestamp};
 pub use uuid::Uuid;
 pub use variant::Variant;
+#[doc(hidden)]
+pub use operators::NullCollation;
 
 use std::sync::LazyLock;
 

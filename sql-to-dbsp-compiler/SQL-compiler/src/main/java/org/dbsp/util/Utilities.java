@@ -55,6 +55,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -148,6 +149,15 @@ public class Utilities {
         } catch (Exception unused) {
             return false;
         }
+    }
+
+    /** Return string with capital letter and all the rest lowercase.
+     * Does not check for spaces inside. */
+    public static String capitalize(String str) {
+        if (str.isEmpty())
+            return str;
+        return str.substring(0, 1).toUpperCase(Locale.ENGLISH) +
+                str.substring(1).toLowerCase(Locale.ENGLISH);
     }
 
     public static ObjectMapper deterministicObjectMapper() {

@@ -3,6 +3,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use dbsp::algebra::{HasZero, F32, F64};
 use num::PrimInt;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
+use std::cmp::Ordering;
 
 use crate::{for_all_int_operator, some_existing_operator, some_operator};
 
@@ -75,6 +76,14 @@ macro_rules! for_all_compare {
 }
 */
 
+#[doc(hidden)]
+pub enum NullCollation {
+    Low,   // NULL compares smaller than any value
+    High,  // NULL compares higher than any value
+    First, // NULL comes first, both for ASC and DESC
+    Last,  // Null comes last, both for ASC and DESC
+}
+
 #[inline(always)]
 #[doc(hidden)]
 pub(crate) fn eq<T>(left: T, right: T) -> bool
@@ -96,6 +105,71 @@ where
 }
 
 for_all_compare!(neq, bool, T where Eq);
+
+fn reverse_if_descending(o: std::cmp::Ordering, ascending: bool) -> std::cmp::Ordering {
+    if ascending {
+        o
+    } else {
+        o.reverse()
+    }
+}
+
+#[doc(hidden)]
+pub fn compareN<T>(
+    left: &Option<T>,
+    right: &Option<T>,
+    ascending: bool,
+    collation: NullCollation,
+) -> std::cmp::Ordering
+where
+    T: Ord,
+{
+    match collation {
+        NullCollation::Low => {
+            let cmp = left.cmp(right);
+            reverse_if_descending(cmp, ascending)
+        }
+        NullCollation::High => reverse_if_descending(
+            match (left, right) {
+                (&None, &None) => Ordering::Equal,
+                (&None, _) => Ordering::Greater,
+                (_, &None) => Ordering::Less,
+                (_, _) => left.cmp(right),
+            },
+            ascending,
+        ),
+        NullCollation::First => match (left, right) {
+            (&None, &None) => Ordering::Equal,
+            (&None, _) => Ordering::Less,
+            (_, &None) => Ordering::Greater,
+            (_, _) => reverse_if_descending(left.cmp(right), ascending),
+        },
+        NullCollation::Last => match (left, right) {
+            (&None, &None) => Ordering::Equal,
+            (&None, _) => Ordering::Greater,
+            (_, &None) => Ordering::Less,
+            (_, _) => reverse_if_descending(left.cmp(right), ascending),
+        },
+    }
+}
+
+#[doc(hidden)]
+pub fn compare_<T>(
+    left: &T,
+    right: &T,
+    ascending: bool,
+    _collation: NullCollation,
+) -> std::cmp::Ordering
+where
+    T: Ord,
+{
+    let result = left.cmp(right);
+    if ascending {
+        result
+    } else {
+        result.reverse()
+    }
+}
 
 #[doc(hidden)]
 #[inline(always)]
@@ -499,6 +573,7 @@ where
 for_all_compare!(min, T, Ord + Clone);
 */
 
+#[doc(hidden)]
 pub fn blackbox<T>(value: T) -> T {
     value
 }
