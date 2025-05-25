@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Objects;
 
 public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression postProcess;
@@ -47,16 +48,12 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        throw new InternalCompilerError("Should not be called");
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression function, DBSPType outputType, List<OutputPort> inputs, boolean force) {
+        if (this.mustReplace(force, function, inputs, outputType))
             return new DBSPAggregateLinearPostprocessOperator(
                     this.getRelNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
-                    this.getFunction(), this.postProcess, newInputs.get(0))
+                    Objects.requireNonNull(function), this.postProcess, inputs.get(0))
                     .copyAnnotations(this);
         return this;
     }

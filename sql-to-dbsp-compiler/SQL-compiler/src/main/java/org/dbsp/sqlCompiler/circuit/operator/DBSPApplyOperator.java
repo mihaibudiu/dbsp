@@ -53,7 +53,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApplyOperator(
                 this.getRelNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 outputType, this.input(), this.comment)

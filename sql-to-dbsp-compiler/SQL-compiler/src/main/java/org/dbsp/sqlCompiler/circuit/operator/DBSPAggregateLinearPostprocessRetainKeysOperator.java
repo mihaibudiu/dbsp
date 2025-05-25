@@ -54,7 +54,7 @@ public final class DBSPAggregateLinearPostprocessRetainKeysOperator extends DBSP
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         throw new InternalCompilerError("Should not be called");
     }
 

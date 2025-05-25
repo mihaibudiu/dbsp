@@ -54,7 +54,7 @@ public final class DBSPFilterOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFilterOperator(this.getRelNode(), Objects.requireNonNull(expression), this.input())
                 .copyAnnotations(this);
     }

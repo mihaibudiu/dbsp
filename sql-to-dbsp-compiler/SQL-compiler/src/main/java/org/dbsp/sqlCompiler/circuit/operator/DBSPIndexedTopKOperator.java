@@ -121,7 +121,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         throw new UnimplementedException();
     }
 

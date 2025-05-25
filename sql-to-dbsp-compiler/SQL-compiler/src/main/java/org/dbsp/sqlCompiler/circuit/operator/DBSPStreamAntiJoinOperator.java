@@ -35,7 +35,7 @@ public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPStreamAntiJoinOperator(
                 this.getRelNode(), this.left(), this.right()).copyAnnotations(this);
     }

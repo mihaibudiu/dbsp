@@ -357,7 +357,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression, Maybe.MAYBE);
-            DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
+            DBSPSimpleOperator result = source.simpleNode().with(newFunction, operator.outputType);
             this.map(operator, result);
             return;
         } else if ((source.node().is(DBSPIntegrateOperator.class) && (inputFanout == 1)) ||

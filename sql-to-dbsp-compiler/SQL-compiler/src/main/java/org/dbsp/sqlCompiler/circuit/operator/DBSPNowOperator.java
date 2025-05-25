@@ -43,7 +43,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return this;
     }
 

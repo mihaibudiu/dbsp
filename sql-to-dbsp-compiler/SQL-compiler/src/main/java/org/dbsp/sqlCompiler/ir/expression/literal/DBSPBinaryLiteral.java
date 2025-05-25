@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary256;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -61,6 +62,7 @@ public final class DBSPBinaryLiteral extends DBSPLiteral {
 
     public DBSPBinaryLiteral(CalciteObject node, DBSPType type, @Nullable byte[] value) {
         super(node, type, value == null);
+        Utilities.enforce(type.is(DBSPTypeBinary.class) || type.is(DBSPTypeBinary256.class));
         this.value = value;
     }
 

@@ -60,7 +60,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPHopOperator(
                 this.getRelNode(), this.timestampIndex, this.interval, this.start, this.size,
                 outputType.to(DBSPTypeZSet.class), this.input())

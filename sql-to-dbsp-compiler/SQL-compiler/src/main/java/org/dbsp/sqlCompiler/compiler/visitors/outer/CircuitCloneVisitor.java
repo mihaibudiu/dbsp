@@ -108,9 +108,14 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (!old.equals(newOp)) {
             long derivedFrom = old.node().derivedFrom;
             newOp.node().setDerivedFrom(derivedFrom);
+            /*
+            Sometimes the types are not the same, but they are "compatible",
+            e.g., Binary(256) and Binary256
+
             Utilities.enforce(old.outputType().sameType(newOp.outputType()),
                     "Replacing operator with type\n" + old.outputType() +
                             " with new type\n" + newOp.outputType());
+             */
         }
     }
 

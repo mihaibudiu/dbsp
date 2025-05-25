@@ -101,20 +101,15 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType type) {
-        DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
-        return new DBSPMapIndexOperator(
-                this.getRelNode(), Objects.requireNonNull(expression),
-                ixOutputType, this.input()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        Utilities.enforce(newInputs.size() == 1);
-        if (force || this.inputsDiffer(newInputs))
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression expression, DBSPType type,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, expression, newInputs, type)) {
+            DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
             return new DBSPMapIndexOperator(
-                    this.getRelNode(), this.getFunction(),
-                    this.getOutputIndexedZSetType(), newInputs.get(0)).copyAnnotations(this);
+                    this.getRelNode(), Objects.requireNonNull(expression),
+                    ixOutputType, newInputs.get(0)).copyAnnotations(this);
+        }
         return this;
     }
 

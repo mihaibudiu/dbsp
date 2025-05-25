@@ -6,6 +6,8 @@ public enum DBSPTypeCode {
     ANY("ANY", "_", "_"),
     BOOL("BOOL", "b", "bool"),
     BYTES("BINARY", "bytes", "ByteArray"),
+    // Specialized version of BYTES for carrying exactly 256 bits
+    BYTES256("BINARY", "FixedByteArray", "FixedByteArray"),
     DATE("DATE", "Date", "Date"),
     DECIMAL("DECIMAL", "SqlDecimal", "SqlDecimal"),
     DECIMAL_RUNTIME("DECIMAL", "SqlDecimal", "SqlDecimal"),

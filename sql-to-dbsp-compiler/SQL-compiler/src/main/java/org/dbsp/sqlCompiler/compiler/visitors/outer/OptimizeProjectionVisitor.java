@@ -51,7 +51,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             if (source.node().is(DBSPConstantOperator.class)) {
                 DBSPExpression newConstant = projection.applyAfter(
                         source.node().to(DBSPConstantOperator.class).getFunction().to(DBSPZSetExpression.class));
-                DBSPSimpleOperator result = source.simpleNode().withFunction(newConstant, operator.outputType);
+                DBSPSimpleOperator result = source.simpleNode().with(newConstant, operator.outputType);
                 this.map(operator, result);
                 return;
             } else if (source.node().is(DBSPFlatMapOperator.class)) {
@@ -66,7 +66,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                             operator.getRelNode(), newFunctionType, sourceFunction.inputElementType,
                             sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
                             sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
-                    DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
+                    DBSPSimpleOperator result = source.simpleNode().with(newFunction, operator.outputType);
                     this.map(operator, result);
                     return;
                 }
@@ -123,7 +123,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression function = operator.getFunction();
         DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
                 .applyAfter(reporter, joinFunction, Maybe.YES);
-        return source.withFunction(newFunction, operator.outputType)
+        return source.with(newFunction, operator.outputType)
                 .copyAnnotations(source)
                 .to(DBSPJoinBaseOperator.class);
     }
@@ -167,7 +167,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
         } else {
-            return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
+            return source.with(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
         }
     }
 

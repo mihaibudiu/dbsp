@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
 /** Base class for all DBSP query operators that have a single input. */
 public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
@@ -57,7 +58,11 @@ public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
 
     // Default implementation.
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression unused,
+            DBSPType outputType,
+            List<OutputPort> ports,
+            boolean force) {
         return this;
     }
 

@@ -26,7 +26,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPrimitiveAggregateOperator(this.getRelNode(), expression,
                 outputType, this.left(), this.right()).copyAnnotations(this);
     }

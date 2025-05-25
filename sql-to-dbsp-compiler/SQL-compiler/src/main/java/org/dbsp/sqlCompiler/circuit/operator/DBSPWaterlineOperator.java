@@ -40,7 +40,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPWaterlineOperator(this.getRelNode(), this.init,
                 this.extractTs,
                 Objects.requireNonNull(expression).to(DBSPClosureExpression.class),

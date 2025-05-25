@@ -53,7 +53,7 @@ public final class DBSPSourceMultisetOperator
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMultisetOperator(this.getRelNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
                 this.metadata, this.tableName, this.comment).copyAnnotations(this);

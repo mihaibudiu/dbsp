@@ -64,7 +64,7 @@ public final class DBSPSumOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression unused, DBSPType outputType) {
         return this;
     }
 

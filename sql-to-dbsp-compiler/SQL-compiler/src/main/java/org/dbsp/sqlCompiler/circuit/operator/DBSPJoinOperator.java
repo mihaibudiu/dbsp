@@ -52,20 +52,14 @@ public final class DBSPJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPJoinOperator(
+    public DBSPSimpleOperator with(
+            @Nullable DBSPExpression expression, DBSPType outputType,
+            List<OutputPort> newInputs, boolean force) {
+        if (this.mustReplace(force, expression, newInputs, outputType))
+            return new DBSPJoinOperator(
                 this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
-                this.isMultiset, this.left(), this.right()).copyAnnotations(this);
-    }
-
-    @Override
-    public DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPJoinOperator(
-                    this.getRelNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
-                    .copyAnnotations(this);
+                this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 

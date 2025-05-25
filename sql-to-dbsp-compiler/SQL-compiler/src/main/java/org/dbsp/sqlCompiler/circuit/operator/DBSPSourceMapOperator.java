@@ -61,7 +61,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName,
                 this.keyFields, outputType.to(DBSPTypeIndexedZSet.class), this.originalRowType,
                 this.metadata, this.tableName, this.comment).copyAnnotations(this);

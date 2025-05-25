@@ -1172,9 +1172,11 @@ public abstract class InnerRewriteVisitor
         DBSPExpression result;
         if (fields == null)
             result = expression.getType().none();
-        else
+        else {
+            DBSPTypeTuple type = new DBSPTypeTuple(Linq.map(fields, DBSPExpression::getType, DBSPType.class));
             result = new DBSPTupleExpression(
-                    expression.getNode(), expression.getTypeAsTuple(), fields);
+                    expression.getNode(), type, fields);
+        }
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -97,6 +97,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary256;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -389,6 +390,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPTypeBinary node) {
+        return this.preorder((DBSPTypeBaseType) node);
+    }
+
+    public VisitDecision preorder(DBSPTypeBinary256 node) {
         return this.preorder((DBSPTypeBaseType) node);
     }
 
@@ -1015,6 +1020,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPTypeBinary node) {
+        this.postorder((DBSPTypeBaseType) node);
+    }
+
+    public void postorder(DBSPTypeBinary256 node) {
         this.postorder((DBSPTypeBaseType) node);
     }
 

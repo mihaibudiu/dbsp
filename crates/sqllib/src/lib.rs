@@ -18,6 +18,9 @@ pub use dec::*;
 pub mod error;
 pub use error::*;
 #[doc(hidden)]
+pub mod fixed_binary;
+pub use fixed_binary::*;
+#[doc(hidden)]
 pub mod geopoint;
 pub use geopoint::*;
 #[doc(hidden)]

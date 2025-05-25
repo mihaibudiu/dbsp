@@ -334,4 +334,12 @@ public class Regression1Tests extends SqlIoTest {
                     INSERT INTO G VALUES(1), (2);""", empty);
         }
     }
+
+    @Test
+    public void issue2346() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(c128 BINARY(128), c256 BINARY(256));
+                CREATE LOCAL VIEW V0 AS SELECT GREATEST(c128, CAST(c256 as BINARY(128))) as c128, c256 as c256 FROM T;
+                CREATE VIEW V1 AS SELECT MAX(c128), MAX(c256), BIT_OR(c128), BIT_AND(c256) FROM V0;""");
+    }
 }

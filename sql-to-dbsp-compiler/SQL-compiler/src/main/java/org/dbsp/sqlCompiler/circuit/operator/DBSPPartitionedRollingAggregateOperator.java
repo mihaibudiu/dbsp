@@ -54,7 +54,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateOperator(
                 this.getRelNode(), this.partitioningFunction,
                 (DBSPAggregator) expression, this.aggregate, this.lower, this.upper,

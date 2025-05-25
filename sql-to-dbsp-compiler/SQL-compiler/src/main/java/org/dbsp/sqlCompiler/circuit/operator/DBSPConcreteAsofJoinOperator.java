@@ -99,7 +99,7 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPConcreteAsofJoinOperator(this.getRelNode(),
                 outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(expression),
                 this.leftTimestamp, this.rightTimestamp,

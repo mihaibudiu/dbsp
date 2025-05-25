@@ -34,7 +34,7 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
         return new DBSPDelayOperator(this.getRelNode(), function, this.input())
                 .copyAnnotations(this);
     }

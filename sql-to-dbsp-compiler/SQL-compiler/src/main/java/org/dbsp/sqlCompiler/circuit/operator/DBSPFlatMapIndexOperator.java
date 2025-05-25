@@ -36,7 +36,7 @@ public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFlatMapIndexOperator(
                 this.getRelNode(), Objects.requireNonNull(expression),
                 outputType.to(DBSPTypeIndexedZSet.class), this.isMultiset, this.input())

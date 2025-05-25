@@ -79,7 +79,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainKeysOperator(
                 this.getRelNode(), Objects.requireNonNull(expression),
                 this.left(), this.right()).copyAnnotations(this);

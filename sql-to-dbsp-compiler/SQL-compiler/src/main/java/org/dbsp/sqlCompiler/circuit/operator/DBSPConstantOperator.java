@@ -60,7 +60,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPConstantOperator(this.getRelNode(), Objects.requireNonNull(expression),
                 this.incremental, this.isMultiset)
                 .copyAnnotations(this);

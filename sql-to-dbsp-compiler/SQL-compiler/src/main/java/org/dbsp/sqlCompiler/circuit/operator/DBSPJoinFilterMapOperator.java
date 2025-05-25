@@ -47,7 +47,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPJoinBaseOperator {
     }
 
     @Override
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+    public DBSPSimpleOperator with(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPJoinFilterMapOperator(
                 this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression), this.filter, this.map,
