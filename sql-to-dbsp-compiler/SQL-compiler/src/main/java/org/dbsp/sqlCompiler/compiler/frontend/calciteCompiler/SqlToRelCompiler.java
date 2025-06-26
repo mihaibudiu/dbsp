@@ -145,6 +145,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -1143,6 +1144,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RexNode watermark = null;
             RexNode defaultValue = null;
             SourcePositionRange defaultValueRange = null;
+            boolean interned = false;
             if (col instanceof SqlColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
@@ -1171,6 +1173,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     defaultValueRange = new SourcePositionRange(cd.defaultValue.getParserPosition());
                     defaultValue = this.validateConstantExpression(cd, cd.defaultValue, sources);
                 }
+                interned = cd.interned;
             } else if (col instanceof SqlKeyConstraint ||
                        col instanceof SqlForeignKey) {
                 continue;
@@ -1223,7 +1226,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness, watermark, defaultValue, defaultValueRange);
+                    lateness, watermark, defaultValue, defaultValueRange, interned);
             result.add(meta);
         }
 
@@ -1340,7 +1343,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
             colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
-                    field, false, nameIsQuoted, lateness, null, null, null);
+                    field, false, nameIsQuoted, lateness, null, null, null, false);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
                 this.validateColumnType(true, position, field.getType(), field.getName(), viewName);
             columns.add(meta);
@@ -2000,12 +2003,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         List<RelColumnMetadata> columns = new ArrayList<>();
         int index = 0;
         for (SqlNode n: cv.columns) {
-            SqlColumnDeclaration cd = (SqlColumnDeclaration) n;
+            SqlViewColumnDeclaration cd = (SqlViewColumnDeclaration) n;
             String name = cd.name.getSimple();
             RelDataType type = this.specToRel(cd.dataType, false);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
             var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
-                    Utilities.identifierIsQuoted(cd.name), null, null, null, null);
+                    Utilities.identifierIsQuoted(cd.name), null, null, null, null, cd.interned);
             columns.add(meta);
         }
         var result = new DeclareViewStatement(node, Utilities.toIdentifier(cv.name), columns);
