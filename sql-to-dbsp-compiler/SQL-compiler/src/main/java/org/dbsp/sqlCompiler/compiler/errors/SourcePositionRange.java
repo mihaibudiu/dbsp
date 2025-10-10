@@ -69,10 +69,37 @@ public class SourcePositionRange implements IHasSourcePositionRange {
         return start.equals(that.start) && end.equals(that.end);
     }
 
+    boolean includes(SourcePositionRange other) {
+        return this.start.before(other.start) && other.end.before(this.end);
+    }
+
+    boolean includes(SourcePosition position) {
+        return this.start.before(position) && position.before(this.end);
+    }
+
+    SourcePositionRange merge(SourcePositionRange other) {
+        SourcePosition start = this.start.min(other.start);
+        SourcePosition end = this.end.max(other.end);
+        return new SourcePositionRange(start, end);
+    }
+
     @Override
     public int hashCode() {
         int result = start.hashCode();
         result = 31 * result + end.hashCode();
         return result;
+    }
+
+    public String toShortString() {
+        if (!this.isValid())
+            return "";
+        if (this.start.line == this.end.line)
+            return "#" + this.start.line;
+        else
+            return "#" + this.start.line + "-" + this.end.line;
+    }
+
+    public boolean adjacent(SourcePositionRange p) {
+        return this.end.line == p.start.line && this.end.column >= p.start.column - 1;
     }
 }

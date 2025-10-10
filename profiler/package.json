@@ -8,7 +8,6 @@
     "description": "",
     "devDependencies": {
         "@types/cytoscape": "^3.21.9",
-        "@types/cytoscape-dagre": "^2.3.3",
         "@types/node": "^24.6.0",
         "live-server": "^1.2.2",
         "ts-node": "^10.9.2",
@@ -22,6 +21,7 @@
     },
     "dependencies": {
         "cytoscape": "^3.33.1",
-        "cytoscape-dagre": "^2.5.0"
+        "cytoscape-elk": "^2.3.0",
+        "elkjs": "^0.11.0"
     }
 }

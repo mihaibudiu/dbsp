@@ -807,7 +807,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 return;
             Arrays.sort(toCompile);
             for (File c: toCompile) {
-                if (!c.getName().contains("no-min.sql")) continue;
+                if (!c.getName().contains("rec.sql")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
