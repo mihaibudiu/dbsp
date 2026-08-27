@@ -24,11 +24,11 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt::Write,
     fs::{self, create_dir_all},
-    io::{Cursor as IoCursor, Error as IoError, Write as _},
+    io::{Error as IoError, Write as IoWrite},
     path::{Path, PathBuf},
     time::Duration,
 };
-use zip::{ZipWriter, write::SimpleFileOptions};
+use zip::{ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 mod cpu;
 pub use cpu::{CPUProfiler, RuntimeIdle};
@@ -194,22 +194,29 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
         Ok(dir_path)
     }
 
+    /// Writes a Zip archive containing all the profile `.dot` and `.txt` files
+    /// to `writer`.
+    ///
+    /// Each worker's text is rendered and compressed one worker at a time, so
+    /// the full archive is never held in memory.
+    pub fn write_zip<W: IoWrite>(&self, writer: W) -> ZipResult<W> {
+        let mut zip = ZipWriter::new_stream(writer);
+        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
+            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())?;
+            zip.write_all(graph.to_dot().as_bytes())?;
+
+            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())?;
+            zip.write_all(graph.to_string().as_bytes())?;
+        }
+        zip.start_file("Makefile", SimpleFileOptions::default())?;
+        zip.write_all(Self::MAKEFILE.as_bytes())?;
+        Ok(zip.finish()?.into_inner())
+    }
+
     /// Returns a Zip archive containing all the profile `.dot` files.
     pub fn as_zip(&self) -> Vec<u8> {
-        let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
-        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
-            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(graph.to_dot().as_bytes()).unwrap();
-
-            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(graph.to_string().as_bytes()).unwrap();
-        }
-        zip.start_file("Makefile", SimpleFileOptions::default())
-            .unwrap();
-        zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
-        zip.finish().unwrap().into_inner()
+        self.write_zip(Vec::with_capacity(65536))
+            .expect("writing a zip archive to memory cannot fail")
     }
 }
 
@@ -234,6 +241,26 @@ impl DbspProfile {
     /// Serialize the profile as a JSON string
     pub fn as_json(&self) -> String {
         serde_json::to_string(self).unwrap()
+    }
+
+    /// Writes the profile as JSON to `writer`, one worker at a time.
+    ///
+    /// Produces exactly the bytes of [`Self::as_json`], but
+    /// consumes the profile so that each worker's metadata is freed as soon as
+    /// it has been written.
+    pub fn write_json<W: IoWrite>(self, writer: &mut W) -> Result<(), IoError> {
+        writer.write_all(b"{\"metrics\":")?;
+        serde_json::to_writer(&mut *writer, &self.metrics)?;
+        writer.write_all(b",\"worker_profiles\":[")?;
+        for (index, worker_profile) in self.worker_profiles.into_iter().enumerate() {
+            if index > 0 {
+                writer.write_all(b",")?;
+            }
+            serde_json::to_writer(&mut *writer, &worker_profile)?;
+        }
+        writer.write_all(b"],\"graph\":")?;
+        serde_json::to_writer(&mut *writer, &self.graph)?;
+        writer.write_all(b"}")
     }
 
     /// Encode the profile as JSON and then zip
@@ -480,5 +507,70 @@ impl Profiler {
 
             (output, importance)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::circuit::circuit_builder::NodeId;
+    use std::io::Read;
+
+    /// A worker profile with three operators carrying two metrics each.
+    fn worker_profile(seed: u64) -> WorkerProfile {
+        let mut metadata = HashMap::new();
+        for node in 0..3 {
+            let mut meta = OperatorMeta::new();
+            meta.extend([
+                MetricReading::new(
+                    USED_MEMORY_BYTES,
+                    Vec::new(),
+                    MetaItem::Bytes(HumanBytes::new(seed * 100 + node as u64)),
+                ),
+                MetricReading::new(INVOCATIONS_COUNT, Vec::new(), MetaItem::Count(node)),
+            ]);
+            metadata.insert(GlobalNodeId::from_path(&[NodeId::new(node)]), meta);
+        }
+        WorkerProfile::new(metadata)
+    }
+
+    fn profile(workers: u64, graph: Option<Graph>) -> DbspProfile {
+        DbspProfile::new((0..workers).map(worker_profile).collect(), graph)
+    }
+
+    /// `write_json` produces the same bytes as `as_json`.
+    #[test]
+    fn write_json_matches_as_json() {
+        for (workers, graph) in [(0, None), (1, None), (3, Some(Graph::default()))] {
+            let profile = profile(workers, graph);
+            let expected = profile.as_json();
+            let mut streamed = Vec::new();
+            profile.write_json(&mut streamed).unwrap();
+            assert_eq!(String::from_utf8(streamed).unwrap(), expected);
+        }
+    }
+
+    /// The streamed archive is a valid zip naming one `.dot` and one `.txt`
+    /// per worker, plus the Makefile.
+    #[test]
+    fn write_zip_lists_every_worker() {
+        let profile = GraphProfile {
+            elapsed_time: Duration::from_secs(1),
+            worker_offset: 4,
+            worker_graphs: vec![Graph::default(); 2],
+        };
+        let streamed = profile.write_zip(Vec::new()).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(streamed)).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert_eq!(names, ["4.dot", "4.txt", "5.dot", "5.txt", "Makefile"]);
+        let mut makefile = String::new();
+        archive
+            .by_name("Makefile")
+            .unwrap()
+            .read_to_string(&mut makefile)
+            .unwrap();
+        assert_eq!(makefile, GraphProfile::MAKEFILE);
     }
 }

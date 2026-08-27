@@ -29,6 +29,15 @@ use feldera_types::runtime_status::RuntimeStatus;
 /// a large circuit profile.
 const RESPONSE_SIZE_LIMIT: usize = 50 * 1024 * 1024;
 
+/// How the manager treats the `Content-Encoding` of a pipeline response it relays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelayEncoding {
+    /// Deliver decoded bytes.
+    Decode,
+    /// Relay the bytes as the pipeline sent them, with its `Content-Encoding`.
+    Passthrough,
+}
+
 /// Pick the subprotocol to echo back on a WebSocket handshake.
 ///
 /// Returns `None` when the client offered none (non-browser clients such as
@@ -260,6 +269,7 @@ impl RunnerInteraction {
         query_string: &str,
         timeout: Option<Duration>,
         body_size_limit: Option<usize>,
+        encoding: RelayEncoding,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
         let url = format_pipeline_url(
@@ -273,7 +283,12 @@ impl RunnerInteraction {
             query_string,
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let request = client.request(method, &url).timeout(timeout).force_close();
+        let mut request = client.request(method, &url).timeout(timeout).force_close();
+        if encoding == RelayEncoding::Passthrough {
+            request = request
+                .insert_header((header::ACCEPT_ENCODING, "gzip"))
+                .no_decompress();
+        }
         let request_str = Self::format_request(&request);
 
         let mut original_response = request.send().await.map_err(|e| match e {
@@ -311,31 +326,43 @@ impl RunnerInteraction {
         // Add all the same headers as the original response, excluding:
         // - `connection`: hop-by-hop header, must not be forwarded by proxies
         //   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives)
-        // - `content-encoding`: awc auto-decompresses the body, so the body we forward is already
-        //   decoded — forwarding the original Content-Encoding would make the caller try to
-        //   decompress an already-plain body.
+        // - `content-encoding`, unless relaying the encoded bytes: awc auto-decompresses the
+        //   body, so the body we forward is already decoded, and forwarding the original
+        //   Content-Encoding would make the caller try to decompress an already-plain body.
         // - `content-length`: after decompression the body size differs from the
         //   original Content-Length; let actix-web recompute it.
+        let keep_content_encoding = encoding == RelayEncoding::Passthrough;
         for (header_name, header_value) in original_response.headers().iter().filter(|(h, _)| {
-            *h != "connection" && *h != "content-length" && *h != "content-encoding"
+            *h != "connection"
+                && *h != "content-length"
+                && (keep_content_encoding || *h != "content-encoding")
         }) {
             response_builder.insert_header((header_name.clone(), header_value.clone()));
         }
 
         // Copy over the original response body
+        let body_size_limit = body_size_limit.unwrap_or(RESPONSE_SIZE_LIMIT);
         let response_body = original_response
             .body()
-            .limit(body_size_limit.unwrap_or(RESPONSE_SIZE_LIMIT))
+            .limit(body_size_limit)
             .await
-            .map_err(|e| RunnerError::PipelineInteractionInvalidResponse {
-                pipeline_name: pipeline_name.to_string(),
-                error: format!("unable to reconstruct response body due to: {e}"),
+            .map_err(|e| {
+                warn!(
+                    pipeline = pipeline_name,
+                    pipeline_id = "N/A",
+                    "Rejected the response body of {request_str} (limit {body_size_limit} bytes): {e}"
+                );
+                RunnerError::PipelineInteractionInvalidResponse {
+                    pipeline_name: pipeline_name.to_string(),
+                    error: format!("unable to reconstruct response body due to: {e}"),
+                }
             })?;
         Ok(response_builder.body(response_body))
     }
 
     /// Makes a new HTTP request without body to the pipeline.
-    /// The response is fully composed before returning including headers.
+    /// The response is fully composed before returning including headers,
+    /// with the body decoded ([`RelayEncoding::Decode`]).
     ///
     /// The pipeline location is retrieved from the database using the
     /// provided tenant identifier and pipeline name.
@@ -351,6 +378,35 @@ impl RunnerInteraction {
         timeout: Option<Duration>,
         body_size_limit: Option<usize>,
     ) -> Result<HttpResponse, ManagerError> {
+        self.forward_http_request_to_pipeline_by_name_with_encoding(
+            client,
+            tenant_id,
+            pipeline_name,
+            method,
+            endpoint,
+            query_string,
+            timeout,
+            body_size_limit,
+            RelayEncoding::Decode,
+        )
+        .await
+    }
+
+    /// Like [`Self::forward_http_request_to_pipeline_by_name`], with the
+    /// caller choosing whether the body is decoded or relayed as sent.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn forward_http_request_to_pipeline_by_name_with_encoding(
+        &self,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        method: Method,
+        endpoint: &str,
+        query_string: &str,
+        timeout: Option<Duration>,
+        body_size_limit: Option<usize>,
+        encoding: RelayEncoding,
+    ) -> Result<HttpResponse, ManagerError> {
         let (location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let r = RunnerInteraction::forward_http_request_to_pipeline(
             &self.common_config,
@@ -362,6 +418,7 @@ impl RunnerInteraction {
             query_string,
             timeout,
             body_size_limit,
+            encoding,
         )
         .await;
 
@@ -381,7 +438,7 @@ impl RunnerInteraction {
                     let mut cache = self.endpoint_cache.write().unwrap();
                     cache.remove(&(tenant_id, pipeline_name.to_string()));
                     drop(cache);
-                    Box::pin(self.forward_http_request_to_pipeline_by_name(
+                    Box::pin(self.forward_http_request_to_pipeline_by_name_with_encoding(
                         client,
                         tenant_id,
                         pipeline_name,
@@ -390,6 +447,7 @@ impl RunnerInteraction {
                         query_string,
                         timeout,
                         body_size_limit,
+                        encoding,
                     ))
                     .await
                 }
@@ -534,6 +592,7 @@ impl RunnerInteraction {
         request: HttpRequest,
         body: Payload,
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
+        encoding: RelayEncoding,
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let url = format_pipeline_url(
@@ -547,7 +606,16 @@ impl RunnerInteraction {
             request.query_string(),
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        streaming_proxy(client, &url, pipeline_name, &request, body, timeout).await
+        streaming_proxy(
+            client,
+            &url,
+            pipeline_name,
+            &request,
+            body,
+            timeout,
+            encoding,
+        )
+        .await
     }
 
     pub(crate) async fn get_logs_from_pipeline(
@@ -638,8 +706,10 @@ impl RunnerInteraction {
 /// the response back. Extracted from [`RunnerInteraction`] so it can be
 /// unit-tested without a database.
 ///
-/// Strips the client's `Accept-Encoding` and forces `Content-Encoding: identity`
-/// on the response (prevents gzip frame buffering that blocks streaming clients).
+/// When `encoding` is [`RelayEncoding::Decode`] strips the client's `Accept-Encoding`
+/// and forces `Content-Encoding: identity` on the response. When it is
+/// [`RelayEncoding::Passthrough`] the client negotiates compression with the
+/// pipeline directly and the response keeps the pipeline's `Content-Encoding`.
 pub(crate) async fn streaming_proxy(
     client: &awc::Client,
     url: &str,
@@ -647,24 +717,26 @@ pub(crate) async fn streaming_proxy(
     request: &HttpRequest,
     body: Payload,
     timeout: Duration,
+    encoding: RelayEncoding,
 ) -> Result<HttpResponse, ManagerError> {
+    // `.no_decompress()` suppresses awc's own `Accept-Encoding` header and keeps the
+    // pipeline's bytes as they are; the manager never decodes a streamed body.
     let mut new_request = client
         .request(request.method().clone(), url)
         .timeout(timeout)
         .force_close()
         .no_decompress();
 
-    // Strip `Accept-Encoding` to prevent compressed responses from the pipeline —
-    // compression causes gzip frame buffering that blocks streaming clients (see the
-    // `Content-Encoding: identity` override below). `.no_decompress()` above suppresses
-    // awc's own `Accept-Encoding` header; here we also strip the client's.
     // `authorization` has already been handled by the API server, and is thus not needed
-    // to be forwarded to the pipeline itself.
-    for header in request
-        .headers()
-        .into_iter()
-        .filter(|(h, _)| *h != "connection" && *h != "accept-encoding" && *h != "authorization")
-    {
+    // to be forwarded to the pipeline itself. The client's `Accept-Encoding` is stripped
+    // for live streams (see the `Content-Encoding: identity` override below) and forwarded
+    // for bulk downloads, so the client and the pipeline negotiate compression directly.
+    let strip_accept_encoding = encoding == RelayEncoding::Decode;
+    for header in request.headers().into_iter().filter(|(h, _)| {
+        *h != "connection"
+            && *h != "authorization"
+            && !(strip_accept_encoding && *h == "accept-encoding")
+    }) {
         new_request = new_request.append_header(header);
     }
 
@@ -707,8 +779,14 @@ pub(crate) async fn streaming_proxy(
     for header in response.headers().into_iter() {
         builder.append_header(header);
     }
-    // Disable compression to avoid gzip frame buffering that causes clients to block
-    builder.insert_header(actix_http::ContentEncoding::Identity);
+    // An explicit `Content-Encoding` keeps the manager's own `Compress` middleware from
+    // recompressing the stream: `Identity` avoids gzip frame buffering that causes clients
+    // to block, and a pipeline-chosen encoding is relayed as is.
+    if encoding == RelayEncoding::Decode
+        || !response.headers().contains_key(header::CONTENT_ENCODING)
+    {
+        builder.insert_header(actix_http::ContentEncoding::Identity);
+    }
     Ok(builder.streaming(response))
 }
 
@@ -792,6 +870,7 @@ mod tests {
             &req,
             payload,
             Duration::from_secs(10),
+            RelayEncoding::Decode,
         )
         .await
         .unwrap();
@@ -805,6 +884,48 @@ mod tests {
         let body = read_body(resp).await;
         assert_eq!(body, plain);
         // Dropping mock_server verifies the expect(0) assertion.
+    }
+
+    /// In passthrough mode the client's `Accept-Encoding` reaches the pipeline
+    /// and the pipeline's compressed bytes and `Content-Encoding` reach the
+    /// client untouched.
+    #[actix_web::test]
+    async fn test_streaming_proxy_passthrough_relays_encoding() {
+        setup();
+        let mock_server = MockServer::start().await;
+
+        let compressed = b"\x1f\x8b not really gzip, but the proxy must not care".to_vec();
+        Mock::given(method("GET"))
+            .and(path("/dump_json_profile"))
+            .and(wiremock::matchers::header("accept-encoding", "gzip"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(compressed.clone())
+                    .insert_header("content-type", "application/json")
+                    .insert_header("content-encoding", "gzip"),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/dump_json_profile", mock_server.uri());
+        let client = awc::Client::default();
+        let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
+        let resp = streaming_proxy(
+            &client,
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            RelayEncoding::Passthrough,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.status(), 200);
+        assert_eq!(resp.headers().get("content-encoding").unwrap(), "gzip");
+        assert_eq!(read_body(resp).await, compressed);
     }
 
     fn selected_protocol(subprotocols: Option<&str>) -> Option<String> {

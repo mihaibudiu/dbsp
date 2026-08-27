@@ -12,6 +12,7 @@ use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
+use crate::runner::interaction::RelayEncoding;
 use actix_web::HttpResponse;
 use actix_web::http::Method;
 use actix_web::rt::time::timeout;
@@ -20,6 +21,7 @@ use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -32,9 +34,11 @@ use utoipa::{IntoParams, ToSchema};
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
 const SKIPPED_BY_USER: &str = "Skipped due to user request";
 
-const EXTENDED_RESPONSE_SIZE_LIMIT: usize = 300 * 1024 * 1024; // Applies to profiles which can be very large
-
 type BundleResult<T> = Result<T, String>;
+
+/// Size cap for pipeline response. Counts transferred bytes: an item fetched
+/// compressed can be much larger.  Applies to e.g., profiles collected.
+const EXTENDED_RESPONSE_SIZE_LIMIT: usize = 300 * 1024 * 1024;
 
 fn collect() -> bool {
     true
@@ -131,10 +135,11 @@ async fn fetch_pipeline_data(
     query_string: &str,
     timeout_duration: Option<Duration>,
     body_size_limit: Option<usize>,
+    encoding: RelayEncoding,
 ) -> Result<HttpResponse, ManagerError> {
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_http_request_to_pipeline_by_name_with_encoding(
             client,
             tenant_id,
             pipeline_name,
@@ -143,6 +148,7 @@ async fn fetch_pipeline_data(
             query_string,
             timeout_duration,
             body_size_limit,
+            encoding,
         )
         .await
 }
@@ -216,6 +222,16 @@ fn gz_decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(decompressed)
 }
 
+/// Decodes `body` according to its `content_encoding` header value.
+/// Supports identity and gzip; any other encoding is an error.
+fn decode_identity(body: Vec<u8>, content_encoding: &str) -> BundleResult<Vec<u8>> {
+    match content_encoding.to_ascii_lowercase().as_str() {
+        "" | "identity" => Ok(body),
+        "gzip" | "x-gzip" => gz_decompress(&body),
+        other => Err(format!("unsupported Content-Encoding {other:?}")),
+    }
+}
+
 /// Extract a specific file from a ZIP archive
 fn extract_from_zip(zip_data: &[u8], filename: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
@@ -238,36 +254,37 @@ fn extract_from_zip(zip_data: &[u8], filename: &str) -> Result<Vec<u8>, String> 
 async fn response_to_bundle_result(
     response: Result<HttpResponse, ManagerError>,
 ) -> BundleResult<Vec<u8>> {
-    response_to_bundle_result_with_transform(response, |body, _| Ok(body)).await
+    response_to_bundle_result_with_transform(response, |body, _, _| Ok(body)).await
 }
 
-/// Convert the HTTP response from a pipeline to a bundle result,
-/// applying a transformer function to the response body.
-///
-/// The transformer receives (body_bytes, content_type) and returns
-/// a transformed BundleResult<Vec<u8>>.
+/// Convert the HTTP response from a pipeline to a bundle result, passing a
+/// successful body through `transform(body, content_type, content_encoding)`.
 async fn response_to_bundle_result_with_transform<F>(
     response: Result<HttpResponse, ManagerError>,
     transform: F,
 ) -> BundleResult<Vec<u8>>
 where
-    F: FnOnce(Vec<u8>, &str) -> BundleResult<Vec<u8>>,
+    F: FnOnce(Vec<u8>, &str, &str) -> BundleResult<Vec<u8>>,
 {
     match response {
         Ok(response) if response.status().is_success() => {
-            let content_type = response
-                .headers()
-                .get(actix_web::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_string();
+            let header_value = |name| {
+                response
+                    .headers()
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let content_type = header_value(actix_web::http::header::CONTENT_TYPE);
+            let content_encoding = header_value(actix_web::http::header::CONTENT_ENCODING);
 
             let body_bytes = actix_web::body::to_bytes(response.into_body())
                 .await
                 .map(|bytes| bytes.to_vec())
                 .map_err(|e| e.to_string())?;
 
-            transform(body_bytes, &content_type)
+            transform(body_bytes, &content_type, &content_encoding)
         }
         Ok(response) => {
             let mut error_string = format!("HTTP {}", response.status());
@@ -438,9 +455,7 @@ impl SupportBundleData {
         }
 
         let (
-            circuit_profile,
-            json_circuit_profile,
-            heap_profile,
+            (circuit_profile, json_circuit_profile, heap_profile),
             metrics,
             logs,
             stats,
@@ -449,27 +464,26 @@ impl SupportBundleData {
             dataflow_graph,
             pipeline_events,
         ) = tokio::join!(
+            // Profiles can be very large: fetching them one after another keeps the
+            // pipeline memory bounded.
             async {
-                if params.circuit_profile {
+                let circuit_profile = if params.circuit_profile {
                     Self::collect_circuit_profile(state, client, tenant_id, pipeline_name).await
                 } else {
                     skipped()
-                }
-            },
-            async {
-                if params.circuit_profile {
+                };
+                let json_circuit_profile = if params.circuit_profile {
                     Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name)
                         .await
                 } else {
                     skipped()
-                }
-            },
-            async {
-                if params.heap_profile {
+                };
+                let heap_profile = if params.heap_profile {
                     Self::collect_heap_profile(state, client, tenant_id, pipeline_name).await
                 } else {
                     skipped()
-                }
+                };
+                (circuit_profile, json_circuit_profile, heap_profile)
             },
             async {
                 if params.metrics {
@@ -553,10 +567,14 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
+            RelayEncoding::Passthrough,
         )
         .await;
 
-        response_to_bundle_result(response).await
+        response_to_bundle_result_with_transform(response, |body, _, encoding| {
+            decode_identity(body, encoding)
+        })
+        .await
     }
 
     async fn collect_json_circuit_profile(
@@ -574,22 +592,27 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
+            RelayEncoding::Passthrough,
         )
         .await;
 
-        // Transform the response based on Content-Type:
-        // - Old pipelines return application/zip with profile.json inside
-        // - New pipelines return plain JSON
-        // Both are normalized to gzip-compressed JSON for storage.
-        response_to_bundle_result_with_transform(response, |body_bytes, content_type| {
-            if content_type.contains("application/zip") {
-                // Extract JSON from ZIP, then compress for storage
-                extract_from_zip(&body_bytes, "profile.json").and_then(gz_compress)
-            } else {
-                // Plain JSON, compress for storage
-                gz_compress(body_bytes)
-            }
-        })
+        // Store the profile as gzip-compressed JSON, whether it arrived
+        // gzip-compressed, as plain JSON, or as a zip holding `profile.json`.
+        // (Legacy pipelines may return plain JSON).
+        response_to_bundle_result_with_transform(
+            response,
+            |body_bytes, content_type, content_encoding| match content_encoding
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "gzip" | "x-gzip" => Ok(body_bytes),
+                "" | "identity" if content_type.contains("application/zip") => {
+                    extract_from_zip(&body_bytes, "profile.json").and_then(gz_compress)
+                }
+                "" | "identity" => gz_compress(body_bytes),
+                other => Err(format!("unsupported Content-Encoding {other:?}")),
+            },
+        )
         .await
     }
 
@@ -608,10 +631,14 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
+            RelayEncoding::Passthrough,
         )
         .await;
 
-        response_to_bundle_result(response).await
+        response_to_bundle_result_with_transform(response, |body, _, encoding| {
+            decode_identity(body, encoding)
+        })
+        .await
     }
 
     async fn collect_metrics(
@@ -629,6 +656,7 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             None,
+            RelayEncoding::Decode,
         )
         .await;
 
@@ -666,6 +694,7 @@ impl SupportBundleData {
             "include_connector_errors=true",
             Some(COLLECTION_TIMEOUT),
             None,
+            RelayEncoding::Decode,
         )
         .await;
 
@@ -718,19 +747,28 @@ impl SupportBundleData {
         serde_json::to_vec_pretty(&events).map_err(|e| e.to_string())
     }
 
+    /// Adds this collection's files to a bundle. `add_to_zip` receives the file
+    /// name, its bytes, and how to store them: items that are already
+    /// compressed (gzip, zip) are stored verbatim, everything else deflated.
     #[allow(clippy::type_complexity)]
     pub(crate) async fn push_to_zip(
         &self,
-        add_to_zip: &mut dyn FnMut(&str, &[u8]) -> Result<(), Box<dyn std::error::Error>>,
+        add_to_zip: &mut dyn FnMut(
+            &str,
+            &[u8],
+            zip::CompressionMethod,
+        ) -> Result<(), Box<dyn std::error::Error>>,
         params: &SupportBundleParameters,
     ) -> Result<CollectionSummary, Box<dyn std::error::Error>> {
+        use zip::CompressionMethod::{Deflated, Stored};
+
         let mut summary = CollectionSummary::default();
 
         // Add circuit profile
         if params.circuit_profile {
             match &self.circuit_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("circuit_profile.zip", content);
+                    let _ = add_to_zip("circuit_profile.zip", content, Stored);
                     summary.collected("circuit_profile.zip");
                 }
                 Err(e) => {
@@ -741,50 +779,45 @@ impl SupportBundleData {
             };
             match &self.json_circuit_profile {
                 Ok(content) => {
-                    if self.version >= 4 {
-                        match gz_decompress(content) {
-                            Ok(decompressed) => {
-                                let _ = add_to_zip("circuit_profile.json", &decompressed);
-                                summary.collected("circuit_profile.json");
-                            }
-                            Err(e) => {
-                                summary.failed(
-                                    "circuit_profile.json",
-                                    format!("Failed to decompress: {}", e),
-                                );
-                            }
-                        }
+                    // Since data version 4 the profile is stored as gzip-compressed JSON,
+                    // which the bundle carries unchanged: a large profile is never inflated
+                    // on the manager. Older versions hold a zip with `profile.json` inside.
+                    let gz: BundleResult<Cow<[u8]>> = if self.version >= 4 {
+                        Ok(Cow::Borrowed(content.as_slice()))
                     } else {
-                        match extract_from_zip(content, "profile.json") {
-                            Ok(json_content) => {
-                                let _ = add_to_zip("circuit_profile.json", &json_content);
-                                summary.collected("circuit_profile.json");
-                            }
-                            Err(e) => {
-                                summary.failed(
-                                    "circuit_profile.json",
-                                    format!("Failed to extract from ZIP: {}", e),
-                                );
-                            }
+                        extract_from_zip(content, "profile.json")
+                            .and_then(gz_compress)
+                            .map(Cow::Owned)
+                    };
+                    match gz {
+                        Ok(gz) => {
+                            let _ = add_to_zip("circuit_profile.json.gz", &gz, Stored);
+                            summary.collected("circuit_profile.json.gz");
+                        }
+                        Err(e) => {
+                            summary.failed(
+                                "circuit_profile.json.gz",
+                                format!("Failed to extract from ZIP: {}", e),
+                            );
                         }
                     }
                 }
                 Err(e) => {
                     if e != SKIPPED_BY_USER {
-                        summary.failed("circuit_profile.json", e.clone());
+                        summary.failed("circuit_profile.json.gz", e.clone());
                     }
                 }
             }
         } else {
             summary.skipped("circuit_profile.zip");
-            summary.skipped("circuit_profile.json");
+            summary.skipped("circuit_profile.json.gz");
         }
 
         // Add heap profile
         if params.heap_profile {
             match &self.heap_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("heap_profile.pb.gz", content);
+                    let _ = add_to_zip("heap_profile.pb.gz", content, Stored);
                     summary.collected("heap_profile.pb.gz");
                 }
                 Err(e) => {
@@ -801,7 +834,7 @@ impl SupportBundleData {
         if params.metrics {
             match &self.metrics {
                 Ok(content) => {
-                    let _ = add_to_zip("metrics.txt", content);
+                    let _ = add_to_zip("metrics.txt", content, Deflated);
                     summary.collected("metrics.txt");
                 }
                 Err(e) => {
@@ -818,7 +851,7 @@ impl SupportBundleData {
         if params.logs {
             match &self.logs {
                 Ok(content) => {
-                    let _ = add_to_zip("logs.txt", content.as_bytes());
+                    let _ = add_to_zip("logs.txt", content.as_bytes(), Deflated);
                     summary.collected("logs.txt");
                 }
                 Err(e) => {
@@ -835,7 +868,7 @@ impl SupportBundleData {
         if params.stats {
             match &self.stats {
                 Ok(content) => {
-                    let _ = add_to_zip("stats.json", content);
+                    let _ = add_to_zip("stats.json", content, Deflated);
                     summary.collected("stats.json");
                 }
                 Err(e) => {
@@ -857,7 +890,7 @@ impl SupportBundleData {
                     if self.version > 0 {
                         match gz_decompress(content) {
                             Ok(decompressed) => {
-                                let _ = add_to_zip("pipeline_config.json", &decompressed);
+                                let _ = add_to_zip("pipeline_config.json", &decompressed, Deflated);
                                 summary.collected("pipeline_config.json");
                             }
                             Err(e) => {
@@ -868,7 +901,7 @@ impl SupportBundleData {
                             }
                         }
                     } else {
-                        let _ = add_to_zip("pipeline_config.json.gz", content);
+                        let _ = add_to_zip("pipeline_config.json.gz", content, Stored);
                         summary.collected("pipeline_config.json.gz");
                     }
                 }
@@ -891,7 +924,7 @@ impl SupportBundleData {
         if params.system_config {
             match &self.system_config {
                 Ok(content) => {
-                    let _ = add_to_zip("system_config.json", content);
+                    let _ = add_to_zip("system_config.json", content, Deflated);
                     summary.collected("system_config.json");
                 }
                 Err(e) => {
@@ -908,7 +941,7 @@ impl SupportBundleData {
         if params.dataflow_graph {
             match &self.dataflow_graph {
                 Ok(content) => {
-                    let _ = add_to_zip("dataflow_graph.json", content);
+                    let _ = add_to_zip("dataflow_graph.json", content, Deflated);
                     summary.collected("dataflow_graph.json");
                 }
                 Err(e) => {
@@ -927,7 +960,7 @@ impl SupportBundleData {
         if params.pipeline_events {
             match &self.pipeline_events {
                 Ok(content) => {
-                    let _ = add_to_zip("pipeline_events.json", content);
+                    let _ = add_to_zip("pipeline_events.json", content, Deflated);
                     summary.collected("pipeline_events.json");
                 }
                 Err(e) => {
@@ -1500,6 +1533,22 @@ mod tests {
         );
     }
 
+    /// Already-compressed profiles are stored unchanged, irrespective of the encoding
+    /// a pipeline put on the wire.
+    #[test]
+    fn decode_identity_undoes_transport_gzip_only() {
+        let payload = b"PK\x03\x04 pretend zip".to_vec();
+        assert_eq!(decode_identity(payload.clone(), "").unwrap(), payload);
+        assert_eq!(
+            decode_identity(payload.clone(), "identity").unwrap(),
+            payload
+        );
+        let gz = gz_compress(payload.clone()).unwrap();
+        assert_eq!(decode_identity(gz.clone(), "GZIP").unwrap(), payload);
+        assert_eq!(decode_identity(gz, "x-gzip").unwrap(), payload);
+        assert!(decode_identity(payload, "br").is_err());
+    }
+
     #[tokio::test]
     async fn push_to_zip_with_ignores() {
         let bundle_data = SupportBundleData {
@@ -1527,8 +1576,8 @@ mod tests {
 
         let summary = bundle_data
             .push_to_zip(
-                &mut |filename, content| {
-                    zip_entries.push((filename.to_string(), content.to_vec()));
+                &mut |filename, content, method| {
+                    zip_entries.push((filename.to_string(), content.to_vec(), method));
                     Ok(())
                 },
                 &all_enabled,
@@ -1540,6 +1589,18 @@ mod tests {
         assert_eq!(summary.failed.len(), 0);
         assert_eq!(summary.skipped.len(), 0);
         assert_eq!(zip_entries.len(), 10);
+
+        // The gzip-compressed JSON profile goes into the bundle as is,
+        // stored rather than deflated.
+        let json_entry = zip_entries
+            .iter()
+            .find(|(name, _, _)| name == "circuit_profile.json.gz")
+            .expect("circuit_profile.json.gz in bundle");
+        assert_eq!(
+            &json_entry.1,
+            bundle_data.json_circuit_profile.as_ref().unwrap()
+        );
+        assert_eq!(json_entry.2, zip::CompressionMethod::Stored);
 
         // Test with some parameters disabled
         let some_disabled = SupportBundleParameters {
@@ -1560,8 +1621,8 @@ mod tests {
 
         let summary = bundle_data
             .push_to_zip(
-                &mut |filename, content| {
-                    zip_entries.push((filename.to_string(), content.to_vec()));
+                &mut |filename, content, method| {
+                    zip_entries.push((filename.to_string(), content.to_vec(), method));
                     Ok(())
                 },
                 &some_disabled,

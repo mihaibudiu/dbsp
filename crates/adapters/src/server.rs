@@ -40,7 +40,7 @@ use actix_web::{
 };
 use arrow::ipc::writer::StreamWriter;
 use async_stream;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use clap::Parser;
 use colored::Colorize;
@@ -90,6 +90,7 @@ use feldera_types::{
     checkpoint::CheckpointMetadata, config::TransportConfig, transport::http::HttpInputConfig,
 };
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
+use flate2::{Compression, write::GzEncoder};
 use futures::StreamExt;
 use futures::stream::unfold;
 use futures_util::FutureExt;
@@ -104,7 +105,7 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write as IoWrite};
 use std::mem::take;
 use std::path::{Path, PathBuf};
 use std::sync::MutexGuard;
@@ -117,10 +118,11 @@ use std::{
     thread,
 };
 use tokio::spawn;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, mpsc};
 use tokio::task::spawn_blocking;
 use tokio::time::{sleep, timeout};
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::wrappers::WatchStream;
 use tracing::{Instrument, Level, debug, error, info, info_span, warn};
 use tracing_subscriber::EnvFilter;
@@ -2057,21 +2059,236 @@ async fn heap_profile() -> impl Responder {
     }
 }
 
+// Profile downloads.
+//
+// `/dump_json_profile` delivers a circuit profile.
+// The profile size is O(workers x operators).
+// The data flow is:
+//
+//   pipeline process:  [1] workers --> [2] circuit thread --> [3] blocking pool --> [4] actix worker
+//   coordinator:       --> [5] (multihost only) combines the hosts' profiles
+//   manager service:   --> [6] streaming proxy, or support-data collector
+//   client:            --> [7] REST client, or the profiler UI reading a support bundle
+//
+// [1] Profiler (`dbsp::profile::Profiler`)
+//     - runs on: every worker thread of the pipeline process
+//     - what it does: walks the circuit and collects each operator's metadata
+//     - produces: a `WorkerProfile`, i.e., `Map<operatorId, OperatorMeta>``
+//
+// [2] Circuit thread (`controller.rs`, `run_commands`)
+//     - runs on: the controller's circuit thread, between circuit steps
+//     - what it does: `DBSPHandle::retrieve_profile` assembles worker replies
+//     - produces: a `DbspProfile` (every worker's `WorkerProfile` plus the
+//       circuit `Graph`)
+//
+// [3] Serializer (`stream_from_blocking_writer`, this file)
+//     - runs on: a Tokio blocking-pool thread
+//     - what it does: `DbspProfile::write_json` serializes one worker at a time
+//       into a `ChannelWriter`
+//     - produces: JSON text in `ChannelWriter::CHUNK_SIZE` chunks,
+//       gzip-compressed when negotiated
+//
+// [4] HTTP handler (`dump_json_profile`, this file)
+//     - runs on: an actix worker thread
+//     - what it does: turns the channel's `ReceiverStream` into the response body
+//     - produces: a chunked HTTP response (never whole in memory), `application/json`,
+//       with `Content-Encoding: gzip` when negotiated
+//
+// [5] Coordinator (`feldera-coordinator`, `crates/coord` in the cloud repository)
+//     - runs on: its own process, in multihost pipelines only
+//     - what it does: fetches each host's profile and combines them
+//     - produces: one JSON response with the hosts' `worker_profiles`
+//       concatenated
+//
+// [6] Pipeline manager, one of two variants
+//     - runs on: the manager service
+//     - what it does:
+//         - the streaming proxy (`runner/interaction.rs`) serves the
+//            public `circuit_profile`, `circuit_json_profile` and
+//            `heap_profile` endpoints;
+//          - the support-data collector (`api/support_data_collector.rs`)
+//            fetches the profile on request, or every few minutes for
+//            running pipelines
+//     - produces:
+//          - the proxy: the body unchanged, headers included;
+//          - the collector: a database row holding the gzip-compressed JSON,
+//            inserted in the support bundle as `circuit_profile.json.gz`
+//
+// [7] Client, one of two variants
+//     - runs on: outside Feldera
+//     - what it does:
+//          - a REST client (`fda`, `curl`) writes the body to a file;
+//          - the profiler UI (`js-packages/profiler-layout`) inflates the
+//            `circuit_profile.json.gz` entry of a support bundle and parses the
+//            JSON in the browser
+//     - produces:
+//          - the REST client: a file;
+//          - the profiler UI: the profile displayed in the browser
+//
+// Within the pipeline process:
+// - The circuit thread is busy only while the workers collect metadata; the
+//   handler awaits the reply and never blocks it.
+// - Serialization runs on the blocking pool, one worker at a time, into
+//   `ChannelWriter::CHUNK_SIZE` chunks; the whole JSON never exists in memory.
+// - The channel is bounded (`ChannelWriter::CHANNEL_CAPACITY`): a slow client
+//   stalls the serializer, not the circuit; a disconnected client surfaces as
+//   `BrokenPipe` and ends it.
+
+/// A [`std::io::Write`] whose bytes become the body of a streaming HTTP response.
+///
+/// Written to from a blocking thread: `blocking_send` stalls the writer while
+/// the client catches up, bounding memory use.
+struct ChannelWriter {
+    sender: mpsc::Sender<Result<Bytes, std::io::Error>>,
+    buffer: BytesMut,
+}
+
+impl ChannelWriter {
+    /// Bytes accumulated before a chunk is handed to the response.
+    const CHUNK_SIZE: usize = 64 * 1024;
+
+    /// Chunks the writer may run ahead of the HTTP response before it blocks.
+    const CHANNEL_CAPACITY: usize = 8;
+
+    fn new(sender: mpsc::Sender<Result<Bytes, std::io::Error>>) -> Self {
+        Self {
+            sender,
+            buffer: BytesMut::with_capacity(Self::CHUNK_SIZE),
+        }
+    }
+
+    fn send_buffer(&mut self) -> std::io::Result<()> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+        let chunk = self.buffer.split().freeze();
+        self.sender
+            .blocking_send(Ok(chunk))
+            .map_err(|_| std::io::Error::new(ErrorKind::BrokenPipe, "client closed the connection"))
+    }
+}
+
+impl IoWrite for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        if self.buffer.len() >= Self::CHUNK_SIZE {
+            self.send_buffer()?;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.send_buffer()
+    }
+}
+
+impl Drop for ChannelWriter {
+    fn drop(&mut self) {
+        let _ = self.send_buffer();
+    }
+}
+
+/// Builds a response whose body `write` produces on a blocking thread.
+///
+/// The body streams as it is written, so the payload is never held in memory
+/// as a whole. An error from `write` aborts the response, which the client
+/// sees as a truncated body.
+fn stream_from_blocking_writer<F>(
+    mut response: HttpResponseBuilder,
+    what: &'static str,
+    write: F,
+) -> HttpResponse
+where
+    F: FnOnce(&mut ChannelWriter) -> std::io::Result<()> + Send + 'static,
+{
+    let (sender, receiver) = mpsc::channel(ChannelWriter::CHANNEL_CAPACITY);
+    let error_sender = sender.clone();
+    spawn_blocking(move || {
+        let mut writer = ChannelWriter::new(sender);
+        if let Err(error) = write(&mut writer).and_then(|()| writer.flush()) {
+            if error.kind() == ErrorKind::BrokenPipe {
+                info!("Client disconnected while downloading the {what}");
+            } else {
+                error!("Failed to produce the {what}: {error}");
+                let _ = error_sender.blocking_send(Err(error));
+            }
+        }
+    });
+    response.streaming(ReceiverStream::new(receiver))
+}
+
+/// Whether the request's `Accept-Encoding` admits gzip.
+///
+/// A request without the header gets identity bytes, so a plain `curl` keeps
+/// receiving readable JSON; browsers, `requests` and the pipeline manager ask
+/// for gzip explicitly.
+fn client_accepts_gzip(request: &HttpRequest) -> bool {
+    let Some(value) = request
+        .headers()
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    value.split(',').any(|item| {
+        let mut parts = item.split(';').map(str::trim);
+        let coding = parts.next().unwrap_or("");
+        let refused = parts.any(|param| {
+            param
+                .strip_prefix("q=")
+                .is_some_and(|q| q.trim().parse::<f32>().is_ok_and(|q| q == 0.0))
+        });
+        (coding.eq_ignore_ascii_case("gzip") || coding == "*") && !refused
+    })
+}
+
 #[get("/dump_profile")]
 async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok()
+    let profile = state.controller()?.async_graph_profile().await?;
+    let mut response = HttpResponse::Ok();
+    response
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
-        .insert_header(header::ContentEncoding::Identity)
-        .body(state.controller()?.async_graph_profile().await?.as_zip()))
+        .insert_header(header::ContentEncoding::Identity);
+    Ok(stream_from_blocking_writer(
+        response,
+        "circuit profile",
+        move |writer| {
+            profile
+                .write_zip(writer)
+                .map(|_| ())
+                .map_err(std::io::Error::other)
+        },
+    ))
 }
 
 #[get("/dump_json_profile")]
-async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok()
+async fn dump_json_profile(
+    state: WebData<ServerState>,
+    request: HttpRequest,
+) -> Result<HttpResponse, PipelineError> {
+    let profile = state.controller()?.async_json_profile().await?;
+    let gzip = client_accepts_gzip(&request);
+    let mut response = HttpResponse::Ok();
+    response
         .insert_header(header::ContentType("application/json".parse().unwrap()))
-        .insert_header(header::ContentDisposition::attachment("profile.json"))
-        .body(state.controller()?.async_json_profile().await?.as_json()))
+        .insert_header(header::ContentDisposition::attachment("profile.json"));
+    if gzip {
+        response.insert_header(header::ContentEncoding::Gzip);
+    }
+    Ok(stream_from_blocking_writer(
+        response,
+        "circuit JSON profile",
+        move |writer| {
+            if gzip {
+                let mut encoder = GzEncoder::new(writer, Compression::fast());
+                profile.write_json(&mut encoder)?;
+                encoder.finish().map(|_| ())
+            } else {
+                profile.write_json(writer)
+            }
+        },
+    ))
 }
 
 /// Dump the low-level IR of the circuit.
@@ -4070,6 +4287,78 @@ outputs:
         }
 
         (server, state_ret)
+    }
+
+    /// Downloads both circuit profiles from a running pipeline.
+    #[actix_web::test]
+    async fn test_profiles_stream_from_running_pipeline() {
+        use std::io::Read;
+        crate::ensure_default_crypto_provider();
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+            Uuid::new_v4(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        // Without `Accept-Encoding` the JSON profile streams uncompressed.
+        let mut plain = server
+            .get("/dump_json_profile")
+            .no_decompress()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(plain.status(), StatusCode::OK);
+        assert!(plain.headers().get("content-encoding").is_none());
+        assert_eq!(
+            plain.headers().get("transfer-encoding").unwrap(),
+            "chunked",
+            "the profile must stream rather than be buffered"
+        );
+        let plain_body = plain.body().limit(64 << 20).await.unwrap();
+        let plain_json: serde_json::Value = serde_json::from_slice(&plain_body).unwrap();
+        let workers = plain_json["worker_profiles"].as_array().unwrap().len();
+        assert!(workers > 0);
+
+        // With `Accept-Encoding: gzip` it arrives gzip-compressed, with the same content.
+        let mut gz = server
+            .get("/dump_json_profile")
+            .insert_header(("accept-encoding", "gzip"))
+            .no_decompress()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(gz.status(), StatusCode::OK);
+        assert_eq!(gz.headers().get("content-encoding").unwrap(), "gzip");
+        let gz_body = gz.body().limit(64 << 20).await.unwrap();
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(&gz_body[..])
+            .read_to_end(&mut decoded)
+            .unwrap();
+        let gz_json: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(
+            gz_json["worker_profiles"].as_array().unwrap().len(),
+            workers
+        );
+        assert_eq!(gz_json["graph"], plain_json["graph"]);
+
+        // The dot profile is a zip with one `.dot` and `.txt` per worker plus a Makefile.
+        let mut dot = server.get("/dump_profile").send().await.unwrap();
+        assert_eq!(dot.status(), StatusCode::OK);
+        assert_eq!(
+            dot.headers().get("content-type").unwrap(),
+            "application/zip"
+        );
+        let dot_body = dot.body().limit(64 << 20).await.unwrap();
+        // Zip local headers carry entry names uncompressed, so they are visible as bytes.
+        assert!(dot_body.starts_with(b"PK\x03\x04"));
+        let contains = |name: &[u8]| dot_body.windows(name.len()).any(|w| w == name);
+        assert!(contains(b"0.dot") && contains(b"0.txt") && contains(b"Makefile"));
     }
 
     /// Simulate an ungraceful crash of a fault-tolerant pipeline: terminate the

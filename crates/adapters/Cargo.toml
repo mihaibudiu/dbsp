@@ -107,6 +107,7 @@ serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
 form_urlencoded = { workspace = true }
 csv = { workspace = true }
+flate2 = { workspace = true }
 # dynamic-linking makes rdkafka-sys consume the librdkafka that
 # scripts/install-librdkafka.sh builds against AWS-LC, instead of compiling its
 # own copy against whatever OpenSSL pkg-config happens to find. The ssl,

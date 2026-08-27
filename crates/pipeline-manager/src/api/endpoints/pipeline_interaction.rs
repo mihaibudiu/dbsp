@@ -7,6 +7,7 @@ use crate::common_error::CommonError;
 use crate::db::storage::Storage;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
+use crate::runner::interaction::RelayEncoding;
 use actix_http::StatusCode;
 use actix_web::{
     HttpRequest, HttpResponse, get,
@@ -116,6 +117,7 @@ pub(crate) async fn http_input(
             req,
             body,
             Some(Duration::from_secs(30)),
+            RelayEncoding::Decode,
         )
         .await
 }
@@ -208,6 +210,7 @@ pub(crate) async fn http_output(
             req,
             body,
             Some(Duration::MAX),
+            RelayEncoding::Decode,
         )
         .await
 }
@@ -646,6 +649,7 @@ pub(crate) async fn post_pipeline_output_connector_command(
             req,
             body,
             None,
+            RelayEncoding::Decode,
         )
         .await
 }
@@ -870,6 +874,7 @@ pub(crate) async fn get_pipeline_time_series_stream(
             request,
             body,
             Some(Duration::MAX),
+            RelayEncoding::Decode,
         )
         .await
 }
@@ -925,6 +930,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
             request,
             body,
             Some(Duration::from_secs(120)),
+            RelayEncoding::Passthrough,
         )
         .await
 }
@@ -981,6 +987,7 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
             request,
             body,
             Some(Duration::from_secs(120)),
+            RelayEncoding::Passthrough,
         )
         .await
 }
@@ -1672,6 +1679,7 @@ pub(crate) async fn get_pipeline_samply_profile(
             request,
             body,
             Some(Duration::MAX),
+            RelayEncoding::Decode,
         )
         .await
 }
@@ -1717,19 +1725,21 @@ pub(crate) async fn get_pipeline_heap_profile(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
+    // Streamed, like the circuit profiles
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "heap_profile",
-            request.query_string(),
-            None,
-            None,
+            request,
+            body,
+            Some(Duration::from_secs(120)),
+            RelayEncoding::Passthrough,
         )
         .await
 }
@@ -2142,6 +2152,7 @@ pub(crate) async fn pipeline_adhoc_sql(
                 request,
                 body,
                 Some(Duration::MAX),
+                RelayEncoding::Decode,
             )
             .await
     }
@@ -2469,6 +2480,7 @@ pub(crate) async fn clock_advance(
             request,
             body,
             None,
+            RelayEncoding::Decode,
         )
         .await
 }
